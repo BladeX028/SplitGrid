@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SplitGrid · Inicio de sesión</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/splitgrid.css">
+<style>
+body{display:flex;align-items:center;justify-content:center;overflow:auto}
+.auth-wrap{width:100%;max-width:480px;padding:24px 16px}
+.step{display:none}.step.active{display:block}
+.country-detected{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:var(--r);padding:10px 14px;font-size:13px;color:var(--green);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+</style>
+</head>
+<body>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo">Split<span>Grid</span></div>
+    <div class="auth-sub" id="auth-sub-text">Divide. Paga. Sin drama.</div>
+
+    <!-- STEP 1: Role selection -->
+    <div class="step active" id="step-role">
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:600;margin-bottom:14px">¿Cómo quieres entrar?</div>
+      <div class="role-grid">
+        <div class="role-card selected" id="role-cliente" onclick="selectRole('cliente')">
+          <div class="role-icon">🍽️</div>
+          <div class="role-name">Soy cliente</div>
+          <div class="role-desc">Únete a una mesa y divide la cuenta</div>
+        </div>
+        <div class="role-card" id="role-restaurante" onclick="selectRole('restaurante')">
+          <div class="role-icon">🏪</div>
+          <div class="role-name">Soy restaurante</div>
+          <div class="role-desc">Gestiona mesas, pedidos y pagos</div>
+        </div>
+      </div>
+      <!-- Country detected automatically -->
+      <div class="country-detected" id="country-detected">
+        <span id="detected-flag">🇨🇴</span>
+        <span id="detected-text">País detectado automáticamente: Colombia · COP</span>
+      </div>
+      <button class="auth-big-btn" style="background:var(--blue);color:white;margin-top:4px" onclick="goStep('step-login')">
+        Continuar →
+      </button>
+    </div>
+
+    <!-- STEP 2: Country override (only if user clicks "Cambiar") -->
+    <div class="step" id="step-country">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <button onclick="goStep('step-role')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-family:'Inter',sans-serif;font-size:13px">← Volver</button>
+      </div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:600;margin-bottom:14px">Selecciona tu país</div>
+      <div id="country-grid" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+      <button class="auth-big-btn" style="background:var(--blue);color:white" onclick="confirmCountry()">Confirmar →</button>
+    </div>
+
+    <!-- STEP 3: Login / guest -->
+    <div class="step" id="step-login">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <button onclick="goStep('step-role')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-family:'Inter',sans-serif;font-size:13px">← Volver</button>
+        <div id="login-role-badge" class="badge badge-blue">Cliente</div>
+      </div>
+
+      <div id="auth-error" class="error-msg" style="display:none"></div>
+      <div id="auth-info" class="info-msg" style="display:none"></div>
+
+      <!-- Login form -->
+      <div id="login-form-section">
+        <div class="form-group">
+          <label id="label-email">Email</label>
+          <input type="email" id="auth-email" placeholder="tu@email.com">
+        </div>
+        <div class="form-group">
+          <label>Contraseña</label>
+          <input type="password" id="auth-pass" placeholder="••••••••"
+            onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="auth-big-btn" style="background:var(--blue);color:white;margin-top:4px" onclick="doLogin()">
+          Iniciar sesión →
+        </button>
+      </div>
+
+      <!-- Only show guest option for clients -->
+      <div id="guest-section">
+        <div class="auth-divider">
+          <div class="auth-divider-line"></div>
+          <div class="auth-divider-text">o continúa sin cuenta</div>
+          <div class="auth-divider-line"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label id="label-guest">Tu nombre (como invitado)</label>
+          <input type="text" id="guest-name" placeholder="¿Cómo te llamamos?">
+        </div>
+        <button class="auth-big-btn auth-btn-ghost" onclick="doGuestLogin()">
+          👤 Entrar como invitado
+        </button>
+        <button class="auth-big-btn auth-btn-google" onclick="doGoogleMock()">
+          <span style="font-weight:800;font-size:16px">G</span> Continuar con Google
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg">✅ Listo</span></div>
+
+<script src="js/shared.js"></script>
+<script>
+let selectedRole = 'cliente';
+let detectedCountry = detectCountry();
+let selectedCountry = detectedCountry;
+
+// ── INIT ──
+function init() {
+  updateCountryUI();
+  buildCountryGrid();
+  // If already logged in, redirect
+  const st = loadClientState();
+  if (st.user) { window.location.href = 'splitgrid-cliente.html'; return; }
+  const restDB = loadRestDB();
+  if (restDB && restDB._loggedIn) { window.location.href = 'splitgrid-restaurante.html'; return; }
+}
+
+function updateCountryUI() {
+  const c = COUNTRIES[selectedCountry] || COUNTRIES.CO;
+  document.getElementById('detected-flag').textContent = c.flag;
+  document.getElementById('detected-text').textContent =
+    `País detectado automáticamente: ${c.name} · ${c.currency}`;
+}
+
+function buildCountryGrid() {
+  const grid = document.getElementById('country-grid');
+  grid.innerHTML = '';
+  Object.entries(COUNTRIES).forEach(([code, c]) => {
+    const div = document.createElement('div');
+    div.style.cssText = `display:flex;align-items:center;gap:12px;background:var(--bg4);border:1.5px solid ${code===selectedCountry?'var(--blue)':'var(--border2)'};border-radius:var(--r);padding:12px 14px;cursor:pointer;transition:all .15s`;
+    div.innerHTML = `<span style="font-size:22px">${c.flag}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${c.name}</div>
+        <div style="font-size:11px;color:var(--text3)">${c.currency} · ${c.locale}</div>
+      </div>
+      <div style="margin-left:auto;width:16px;height:16px;border-radius:50%;border:2px solid ${code===selectedCountry?'var(--blue)':'var(--border2)'};background:${code===selectedCountry?'var(--blue)':'transparent'};display:flex;align-items:center;justify-content:center">
+        ${code===selectedCountry?'<span style="color:white;font-size:9px;font-weight:800">✓</span>':''}
+      </div>`;
+    div.onclick = () => { selectedCountry = code; buildCountryGrid(); };
+    grid.appendChild(div);
+  });
+}
+
+function confirmCountry() {
+  updateCountryUI();
+  goStep('step-role');
+}
+
+// ── ROLE SELECT ──
+function selectRole(role) {
+  selectedRole = role;
+  document.getElementById('role-cliente').classList.toggle('selected', role === 'cliente');
+  document.getElementById('role-restaurante').classList.toggle('selected', role === 'restaurante');
+}
+
+// ── STEPS ──
+function goStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (id === 'step-login') updateLoginUI();
+}
+
+function updateLoginUI() {
+  const isRest = selectedRole === 'restaurante';
+  document.getElementById('login-role-badge').textContent = isRest ? '🏪 Restaurante' : '🍽️ Cliente';
+  document.getElementById('login-role-badge').className = 'badge ' + (isRest ? 'badge-amber' : 'badge-blue');
+  document.getElementById('guest-section').style.display = isRest ? 'none' : 'block';
+  document.getElementById('label-email').textContent = isRest ? 'Email del restaurante' : 'Email';
+  document.getElementById('auth-email').placeholder = isRest ? 'admin@mirestaurante.com' : 'tu@email.com';
+  if (isRest) {
+    document.getElementById('auth-info').textContent = '💡 Demo: usa cualquier email y contraseña (mín. 6 caracteres)';
+    document.getElementById('auth-info').style.display = 'block';
+  } else {
+    document.getElementById('auth-info').style.display = 'none';
+  }
+  clearErrors();
+}
+
+function clearErrors() {
+  document.getElementById('auth-error').style.display = 'none';
+}
+function showError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+// ── AUTH ──
+function doLogin() {
+  const email = document.getElementById('auth-email').value.trim();
+  const pass  = document.getElementById('auth-pass').value;
+  if (!email) { showError('Ingresa tu email'); return; }
+  if (pass.length < 6) { showError('Contraseña muy corta (mín. 6 caracteres)'); return; }
+
+  if (selectedRole === 'restaurante') {
+    // Init restaurant DB if first time
+    let db = loadRestDB();
+    if (!db) {
+      db = buildDefaultRestDB(email, selectedCountry);
+    }
+    db._loggedIn = true;
+    db._loginEmail = email;
+    saveRestDB(db);
+    window.location.href = 'splitgrid-restaurante.html';
+  } else {
+    const st = loadClientState();
+    st.user = { id:'user_'+Date.now(), name: email.split('@')[0], email, isGuest: false };
+    st.country = selectedCountry;
+    saveClientState(st);
+    window.location.href = 'splitgrid-cliente.html';
+  }
+}
+
+function doGuestLogin() {
+  const name = document.getElementById('guest-name').value.trim();
+  if (!name) { showError('Ingresa tu nombre para continuar como invitado'); return; }
+  const st = loadClientState();
+  st.user = { id:'guest_'+Date.now(), name, email: null, isGuest: true };
+  st.country = selectedCountry;
+  saveClientState(st);
+  window.location.href = 'splitgrid-cliente.html';
+}
+
+function doGoogleMock() {
+  const st = loadClientState();
+  st.user = { id:'google_'+Date.now(), name:'Usuario Google', email:'usuario@gmail.com', isGuest: false };
+  st.country = selectedCountry;
+  saveClientState(st);
+  window.location.href = 'splitgrid-cliente.html';
+}
+
+// ── DEFAULT RESTAURANT DB ──
+function buildDefaultRestDB(email, country) {
+  const c = COUNTRIES[country] || COUNTRIES.CO;
+  const menuByCountry = {
+    CO:[
+      {id:1,name:'Bandeja Paisa',emoji:'🍛',price:42000,cat:'Platos Fuertes',available:true},
+      {id:2,name:'Ajiaco Bogotano',emoji:'🍜',price:35000,cat:'Platos Fuertes',available:true},
+      {id:3,name:'Picada Mixta',emoji:'🥩',price:74000,cat:'Compartidos',available:true},
+      {id:4,name:'Patacones',emoji:'🍟',price:12000,cat:'Entradas',available:true},
+      {id:5,name:'Aguapanela',emoji:'🍵',price:8000,cat:'Bebidas',available:true},
+      {id:6,name:'Cerveza Artesanal',emoji:'🍺',price:14000,cat:'Bebidas',available:true},
+      {id:7,name:'Tres Leches',emoji:'🍰',price:18000,cat:'Postres',available:true},
+    ],
+    BR:[
+      {id:1,name:'Feijoada',emoji:'🫘',price:58,cat:'Pratos Principais',available:true},
+      {id:2,name:'Churrasco Misto',emoji:'🥩',price:89,cat:'Compartilhados',available:true},
+      {id:3,name:'Pão de Queijo',emoji:'🧀',price:18,cat:'Entradas',available:true},
+      {id:4,name:'Caipirinha',emoji:'🍹',price:24,cat:'Bebidas',available:true},
+      {id:5,name:'Brigadeiro',emoji:'🍫',price:12,cat:'Sobremesas',available:true},
+    ],
+    FR:[
+      {id:1,name:'Steak Frites',emoji:'🥩',price:24,cat:'Plats',available:true},
+      {id:2,name:'Plateau de Fromages',emoji:'🧀',price:18,cat:'Partagés',available:true},
+      {id:3,name:'Soupe à l\'oignon',emoji:'🍲',price:12,cat:'Entrées',available:true},
+      {id:4,name:'Vin rouge (bouteille)',emoji:'🍷',price:28,cat:'Boissons',available:true},
+      {id:5,name:'Crème brûlée',emoji:'🍮',price:9,cat:'Desserts',available:true},
+    ],
+    IT:[
+      {id:1,name:'Spaghetti Carbonara',emoji:'🍝',price:16,cat:'Primi',available:true},
+      {id:2,name:'Bistecca Fiorentina',emoji:'🥩',price:38,cat:'Secondi',available:true},
+      {id:3,name:'Antipasto Misto',emoji:'🫒',price:22,cat:'Da dividere',available:true},
+      {id:4,name:'Vino della Casa',emoji:'🍷',price:20,cat:'Bevande',available:true},
+      {id:5,name:'Tiramisù',emoji:'☕',price:8,cat:'Dolci',available:true},
+    ],
+    RU:[
+      {id:1,name:'Борщ',emoji:'🍲',price:420,cat:'Первые блюда',available:true},
+      {id:2,name:'Пельмени',emoji:'🥟',price:580,cat:'Основные',available:true},
+      {id:3,name:'Оливье (большой)',emoji:'🥗',price:680,cat:'На всех',available:true},
+      {id:4,name:'Водка (бутылка)',emoji:'🍾',price:1200,cat:'Напитки',available:true},
+      {id:5,name:'Медовик',emoji:'🍯',price:320,cat:'Десерты',available:true},
+    ],
+  };
+  const menu = menuByCountry[country] || menuByCountry.CO;
+  const restNames = {CO:'El Rincón Criollo',BR:'Sabor Brasileiro',FR:'Le Bistrot du Coin',IT:'Trattoria da Marco',RU:'Ресторан Москва'};
+  const db = {
+    restaurant:{ name: restNames[country]||'Mi Restaurante', address:'', country, tax:c.tax, tip:c.tip, numTables:10 },
+    tables: Array.from({length:10},(_,i)=>({id:i+1,number:i+1,status:'free'})),
+    sessions: [], menu, history: [], nextMenuId: menu.length+1, nextSessionId: 1,
+  };
+  return db;
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "folders": [
+    { "path": "." }
+  ],
+  "settings": {
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.wordWrap": "on",
+    "liveServer.settings.port": 5500,
+    "liveServer.settings.donotShowInfoMsg": true,
+    "liveServer.settings.file": "index.html",
+    "html.format.indentInnerHtml": true,
+    "html.format.wrapLineLength": 120,
+    "css.validate": true,
+    "javascript.suggest.autoImports": true,
+    "javascript.updateImportsOnFileMove.enabled": "always",
+    "files.associations": {
+      "*.html": "html",
+      "*.css": "css",
+      "*.sql": "sql"
+    },
+    "editor.quickSuggestions": {
+      "strings": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ritwickdey.LiveServer",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "formulahendry.auto-rename-tag",
+      "formulahendry.auto-close-tag",
+      "ms-vscode.live-share",
+      "mtxr.sqltools",
+      "bradlc.vscode-tailwindcss",
+      "christian-kohler.path-intellisense",
+      "naumovs.color-highlight"
+    ]
+  }
+}

@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SplitGrid · Cliente</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/splitgrid.css">
+</head>
+<body>
+
+<!-- ═══ APP ═══ -->
+<div id="app" style="display:none">
+
+<aside class="sidebar" id="main-sidebar">
+  <div class="sidebar-logo">
+    <div>
+      <div class="logo-mark">Split<span>Grid</span></div>
+      <div class="logo-sub">App del Cliente</div>
+    </div>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Colapsar menú">◀</button>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">Mesa actual</div>
+    <button class="nav-item active" onclick="showPanel('mesa')"><span class="nav-icon">🪑</span><span class="nav-label"> Mi Mesa</span></button>
+    <button class="nav-item" onclick="showPanel('pago')"><span class="nav-icon">💳</span><span class="nav-label"> Pagar mi parte</span></button>
+    <div class="nav-section">Cuenta</div>
+    <button class="nav-item" onclick="showPanel('historial')"><span class="nav-icon">📊</span><span class="nav-label"> Historial</span></button>
+    <button class="nav-item" onclick="showPanel('join')"><span class="nav-icon">➕</span><span class="nav-label"> Unirse a mesa</span></button>
+    <button class="nav-item" onclick="showPanel('perfil')"><span class="nav-icon">👤</span><span class="nav-label"> Mi perfil</span></button>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="user-avatar" id="sidebar-av">?</div>
+      <div class="user-info">
+        <div class="user-name" id="sidebar-name">Cargando...</div>
+        <div class="user-sub" id="sidebar-sub">Sin mesa</div>
+      </div>
+    </div>
+    <button class="btn btn-danger btn-full btn-sm" style="margin-top:10px" onclick="doLogout()">
+      ← Cerrar sesión
+    </button>
+  </div>
+</aside>
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
+
+<main class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" onclick="openMobileSidebar()" aria-label="Abrir menú">☰</button>
+    <div class="topbar-title" id="topbar-title">Mi Mesa</div>
+    <div class="topbar-actions">
+      <div class="topbar-live" id="live-indicator" style="display:none"><div class="live-dot"></div><span class="live-label">EN VIVO</span></div>
+      <button class="btn btn-ghost btn-sm" id="topbar-currency">🇨🇴 COP</button>
+      <button class="btn btn-primary" id="topbar-pay-btn" onclick="showPanel('pago')" style="display:none">Ir a pagar →</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ════ PANEL: MESA ════ -->
+    <div class="panel active" id="panel-mesa">
+      <div id="mesa-no-session" style="display:none">
+        <div class="empty" style="padding:80px 16px">
+          <div class="empty-icon">🪑</div>
+          <p style="font-size:15px;margin-bottom:20px">No estás en ninguna mesa</p>
+          <button class="btn btn-primary btn-lg" onclick="showPanel('join')">Unirse a una mesa →</button>
+        </div>
+      </div>
+      <div id="mesa-active" style="display:none">
+        <div class="restaurant-bar" id="mesa-bar"></div>
+        <div class="section-header" style="margin-bottom:10px">
+          <div class="section-title">Personas en la mesa</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="openProxyModal()">+ Sin app</button>
+            <button class="btn btn-danger btn-sm" onclick="leaveTable()">← Salir</button>
+          </div>
+        </div>
+        <div class="avatar-strip" id="mesa-avatars"></div>
+        <div class="detail-layout">
+          <div>
+            <div class="section-header">
+              <div class="section-title">Mis pedidos</div>
+              <span class="badge badge-blue" id="my-orders-count">0</span>
+            </div>
+            <div class="orders-list" id="my-orders-list" style="margin-bottom:20px"></div>
+            <div class="section-header">
+              <div class="section-title">Pedidos de la mesa</div>
+              <span class="badge badge-gray" id="table-orders-count">0</span>
+            </div>
+            <div class="orders-list" id="table-orders-list"></div>
+          </div>
+          <div>
+            <div class="person-breakdown">
+              <div class="pb-title">Mi cuenta</div>
+              <div id="my-account-rows"></div>
+              <div id="my-proxy-accounts"></div>
+              <div class="total-box">
+                <div id="my-personal-total-row" style="display:none;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid rgba(59,110,250,.25)">
+                  <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Tu parte personal</div>
+                  <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700" id="my-personal-total">$0</div>
+                </div>
+                <div class="total-label" id="my-total-label">Mi total a pagar</div>
+                <div class="total-amount" id="my-total">$0</div>
+                <div class="total-meta" id="my-total-meta" style="margin-bottom:10px"></div>
+                <div id="tip-toggle-row" style="display:none;margin-bottom:12px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:rgba(0,0,0,.2);border-radius:var(--r);padding:8px 10px;font-family:'Inter',sans-serif">
+                    <input type="checkbox" id="tip-checkbox" onchange="onTipToggle()">
+                    <span style="font-size:13px;color:var(--text2)">Agregar propina (<span id="tip-pct-mesa">10</span>%)</span>
+                  </label>
+                </div>
+                <button class="btn btn-primary btn-full btn-lg" onclick="showPanel('pago')">Ir a pagar →</button>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:6px">
+                <div style="flex:1;background:var(--green-bg);border-radius:var(--r);padding:10px;text-align:center">
+                  <div style="font-size:10px;color:var(--green);font-weight:700">PAGADO</div>
+                  <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:var(--green)" id="my-paid">$0</div>
+                </div>
+                <div style="flex:1;background:var(--amber-bg);border-radius:var(--r);padding:10px;text-align:center">
+                  <div style="font-size:10px;color:var(--amber);font-weight:700">PENDIENTE</div>
+                  <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:var(--amber)" id="my-due">$0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ PANEL: PAGO ════ -->
+    <div class="panel" id="panel-pago">
+      <div id="pago-no-session" style="display:none">
+        <div class="empty" style="padding:80px 16px"><div class="empty-icon">💳</div><p style="margin-bottom:20px">Únete a una mesa primero</p><button class="btn btn-primary" onclick="showPanel('join')">Unirse →</button></div>
+      </div>
+      <div id="pago-active" style="display:none">
+        <div class="detail-layout">
+          <div>
+            <div class="section-header" style="margin-bottom:18px">
+              <div class="section-title">Elige cómo pagar</div>
+              <span class="badge badge-gray" id="pago-country-badge">🇨🇴 COP</span>
+            </div>
+            <div id="payment-methods-list"></div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);margin-top:12px">🔒 Pago seguro · PCI-DSS · GDPR</div>
+          </div>
+          <div>
+            <div class="person-breakdown">
+              <div class="pb-title">Resumen de pago</div>
+              <div id="pago-personal-row" style="display:none;margin-bottom:4px">
+                <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:8px">Tu parte personal</div>
+                <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700" id="pago-personal-amt">$0</div>
+              </div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:36px;font-weight:800;letter-spacing:-2px;margin:8px 0 2px" id="pago-amount-big">$0</div>
+              <div style="font-size:12px;color:var(--text3);margin-bottom:12px" id="pago-amount-sub"></div>
+              <div style="background:var(--bg4);border-radius:var(--r);padding:14px;margin-bottom:12px" id="pago-breakdown"></div>
+              <div id="tip-toggle-pago" style="display:none;margin-bottom:14px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-family:'Inter',sans-serif">
+                  <input type="checkbox" id="tip-checkbox-pago" onchange="onTipToggle()">
+                  <span style="font-size:13px">Agregar propina (<span id="tip-pct-pago">10</span>%)</span>
+                </label>
+              </div>
+              <button class="btn btn-primary btn-full btn-lg" onclick="processPayment()" id="pay-now-btn">Pagar →</button>
+              <button class="btn btn-ghost btn-full btn-sm" style="margin-top:8px" onclick="showPanel('mesa')">Volver a mi mesa</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ PANEL: ÉXITO ════ -->
+    <div class="panel" id="panel-exito">
+      <div style="max-width:540px;margin:0 auto">
+        <div class="form-section" style="text-align:center;padding:32px 24px;margin-bottom:14px">
+          <div style="width:72px;height:72px;background:var(--green-bg);border-radius:50%;border:2px solid rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 16px">✅</div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:800;margin-bottom:4px">¡Pago exitoso!</div>
+          <div style="font-size:14px;color:var(--text3)" id="exito-sub">Restaurante · Mesa</div>
+        </div>
+        <div class="receipt-card" id="exito-receipt"></div>
+        <div class="receipt-card">
+          <div class="section-title" style="margin-bottom:12px">¿Cómo fue tu experiencia?</div>
+          <div class="stars-row">
+            <span class="star" onclick="rateStar(1)">★</span><span class="star" onclick="rateStar(2)">★</span>
+            <span class="star" onclick="rateStar(3)">★</span><span class="star" onclick="rateStar(4)">★</span>
+            <span class="star" onclick="rateStar(5)">★</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:4px">
+          <button class="btn btn-ghost btn-full btn-lg" onclick="showPanel('historial')">Ver historial</button>
+          <button class="btn btn-primary btn-full btn-lg" onclick="leaveSession()">Nueva mesa →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ PANEL: JOIN ════ -->
+    <div class="panel" id="panel-join">
+      <div style="max-width:480px;margin:0 auto">
+        <div style="margin-bottom:28px">
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:30px;font-weight:800;letter-spacing:-1px">Split<span style="color:var(--blue)">Grid</span></div>
+          <div style="font-size:14px;color:var(--text2);margin-top:4px">Escanea el QR o ingresa el código de la mesa</div>
+        </div>
+        <div class="form-section">
+          <div class="form-title">Código de mesa</div>
+          <div class="qr-zone" onclick="simulateScan()">
+            <div style="font-size:34px;margin-bottom:8px">📷</div>
+            <div style="font-size:13px;color:var(--text3)">Toca para escanear QR</div>
+          </div>
+          <div class="divider"><div class="div-line"></div><div class="div-text">o ingresa el código</div><div class="div-line"></div></div>
+          <div class="form-group">
+            <label>Código de la mesa (6 caracteres)</label>
+            <input type="text" id="join-code" placeholder="Ej: ABC123" maxlength="6"
+              style="text-transform:uppercase;font-family:monospace;font-size:18px;letter-spacing:4px;text-align:center"
+              oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div class="form-group">
+            <label>Tu nombre en la mesa</label>
+            <input type="text" id="join-name" placeholder="¿Cómo te llamamos?">
+          </div>
+          <button class="btn btn-primary btn-full btn-lg" onclick="joinSession()">Unirme a la mesa →</button>
+        </div>
+        <div class="form-section" style="background:transparent;border-color:var(--border)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">💡</span>
+            <p style="font-size:13px;color:var(--text3)">El restaurante te proporcionará el código QR o el código de 6 caracteres al abrir tu mesa.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ PANEL: HISTORIAL ════ -->
+    <div class="panel" id="panel-historial">
+      <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat-card"><div class="stat-label">Gastado total</div><div class="stat-value" id="hist-total">$0</div><div class="stat-badge badge-blue" id="hist-currency">COP</div></div>
+        <div class="stat-card"><div class="stat-label">Mesas visitadas</div><div class="stat-value" id="hist-count">0</div><div class="stat-badge badge-green">Total</div></div>
+        <div class="stat-card"><div class="stat-label">Ticket promedio</div><div class="stat-value" id="hist-avg">$0</div><div class="stat-badge badge-purple">Por visita</div></div>
+      </div>
+      <div class="section-header"><div class="section-title">Mis pagos</div></div>
+      <div class="orders-list" id="hist-list"><div class="empty"><div class="empty-icon">📋</div><p>Sin historial aún</p></div></div>
+    </div>
+
+    <!-- ════ PANEL: PERFIL ════ -->
+    <div class="panel" id="panel-perfil">
+      <div style="max-width:520px">
+        <div class="form-section">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid var(--border)">
+            <div id="perfil-avatar" style="width:60px;height:60px;background:linear-gradient(135deg,var(--blue),var(--purple));border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:800;flex-shrink:0">?</div>
+            <div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700" id="perfil-name">Usuario</div>
+              <div style="font-size:13px;color:var(--text3);margin-top:2px" id="perfil-email">Sin email</div>
+              <span class="badge badge-gray" id="perfil-badge" style="margin-top:6px">Invitado</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>País (detectado automáticamente por tu ubicación)</label>
+            <div id="perfil-country-display" style="background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:9px 12px;font-size:13.5px;color:var(--text2)">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</main>
+</div><!-- /app -->
+
+<!-- ═══ MODAL: Agregar comensal sin app (proxy) ═══ -->
+<div class="modal-overlay" id="modal-proxy">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Agregar comensal sin app</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-proxy')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--cyan-bg);border:1px solid rgba(6,182,212,.25);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--cyan);margin-bottom:16px">
+        💡 Agrega a alguien que no tiene celular o no quiere usar la app. <strong>Tú gestionarás sus pagos</strong> desde tu sesión.
+      </div>
+      <div class="form-group">
+        <label>Nombre de la persona</label>
+        <input id="client-proxy-name" placeholder="Nombre completo o apodo" maxlength="40">
+      </div>
+      <div style="background:var(--bg4);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--text3)">
+        Al agregar a esta persona, sus pedidos aparecerán como parte de la mesa y <strong style="color:var(--text)">tú pagarás por ellos</strong> en el momento de liquidar.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-proxy')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="addClientProxy()">Agregar →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg">✅ Listo</span></div>
+
+<script src="js/shared.js"></script>
+<script>
+// ─────────────────────────────────
+// STATE
+// ─────────────────────────────────
+let CL = loadClientState();
+let selectedMethod = 0;
+let includeTip = false;
+
+// Auth guard
+if (!CL.user) { window.location.href = 'index.html'; }
+
+function saveC() { saveClientState(CL); }
+function fmtC(n) { return fmt(n, CL.country); }
+
+// ─────────────────────────────────
+// LOGOUT
+// ─────────────────────────────────
+function doLogout() {
+  if (!confirm('¿Cerrar sesión?')) return;
+  CL.user = null; CL.session = null; saveC();
+  window.location.href = 'index.html';
+}
+
+// ─────────────────────────────────
+// LAUNCH
+// ─────────────────────────────────
+function launchApp() {
+  document.getElementById('app').style.display = 'flex';
+  const u = CL.user;
+  document.getElementById('sidebar-av').textContent = initials(u.name);
+  document.getElementById('sidebar-name').textContent = u.name;
+  document.getElementById('perfil-avatar').textContent = initials(u.name);
+  document.getElementById('perfil-name').textContent = u.name;
+  document.getElementById('perfil-email').textContent = u.email || 'Invitado';
+  document.getElementById('perfil-badge').textContent = u.isGuest ? '👤 Invitado' : '✓ Verificado';
+  document.getElementById('perfil-badge').className = 'badge ' + (u.isGuest ? 'badge-gray' : 'badge-blue');
+  const c = COUNTRIES[CL.country] || COUNTRIES.CO;
+  document.getElementById('topbar-currency').textContent = c.flag + ' ' + c.currency;
+  document.getElementById('perfil-country-display').textContent = c.flag + ' ' + c.name + ' (' + c.currency + ') — detectado automáticamente';
+  if (document.getElementById('join-name')) document.getElementById('join-name').value = u.name;
+  renderMesa(); renderPago(); renderHistory();
+  // Real-time polling
+  setInterval(() => { renderMesa(); renderPago(); }, 5000);
+}
+
+// ─────────────────────────────────
+// PANELS
+// ─────────────────────────────────
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  const titles = {mesa:'Mi Mesa',pago:'Pagar mi parte',exito:'¡Pago exitoso!',join:'Unirse a mesa',historial:'Historial',perfil:'Mi perfil'};
+  document.getElementById('topbar-title').textContent = titles[id] || id;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const map = {mesa:0,pago:1,historial:2,join:3,perfil:4};
+  if (map[id] !== undefined) document.querySelectorAll('.nav-item')[map[id]].classList.add('active');
+  if (id === 'pago') renderPago();
+  if (id === 'historial') renderHistory();
+  if (window.innerWidth <= 768) closeMobileSidebar();
+}
+
+// ─────────────────────────────────
+// JOIN SESSION
+// ─────────────────────────────────
+function joinSession() {
+  const code = document.getElementById('join-code').value.trim().toUpperCase();
+  const name = document.getElementById('join-name').value.trim() || CL.user?.name || 'Invitado';
+  if (code.length !== 6) { toast('⚠️ El código debe tener 6 caracteres'); return; }
+  const restDB = loadRestDB();
+  if (!restDB) { toast('⚠️ No hay restaurante activo. Abre el panel de restaurante primero.'); return; }
+  const s = restDB.sessions.find(se => (se.status==='occupied'||se.status==='paying') && se.joinCode === code);
+  if (!s) { toast('⚠️ Código inválido o sesión cerrada'); return; }
+
+  // Participant memory: reuse existing identity if the user was in this session before
+  const pmap = JSON.parse(localStorage.getItem('sg_pmap') || '{}');
+  const savedId = pmap[code];
+  const savedParticipant = savedId ? (s.participants||[]).find(p => p.id === savedId) : null;
+
+  let myId;
+  let rejoining = false;
+  if (savedParticipant) {
+    myId = savedId;
+    rejoining = true;
+    savedParticipant.name = name;
+    saveRestDB(restDB);
+  } else {
+    myId = CL.user?.id || 'guest_' + Date.now();
+    if (!(s.participants||[]).find(p => p.id === myId)) {
+      s.participants = s.participants || [];
+      s.participants.push({id: myId, name});
+      saveRestDB(restDB);
+    }
+    pmap[code] = myId;
+    localStorage.setItem('sg_pmap', JSON.stringify(pmap));
+  }
+
+  CL.session = {
+    sessionId: s.id, joinCode: code, tableNumber: s.tableNumber,
+    restaurantName: restDB.restaurant.name, myName: name, myId,
+    tax: s.tax, tip: s.tip,
+  };
+  CL.country = restDB.restaurant.country || CL.country;
+  saveC();
+  document.getElementById('sidebar-sub').textContent = 'Mesa #' + s.tableNumber + ' · Activa';
+  document.getElementById('live-indicator').style.display = 'flex';
+  document.getElementById('topbar-pay-btn').style.display = 'inline-flex';
+  toast(rejoining
+    ? '✅ Reingresaste a Mesa #' + s.tableNumber + ' como ' + name
+    : '✅ Te uniste a Mesa #' + s.tableNumber + ' · ' + restDB.restaurant.name);
+  showPanel('mesa'); renderMesa();
+}
+
+function simulateScan() { toast('📷 En producción: abre la cámara del dispositivo'); document.getElementById('join-code').focus(); }
+
+// ─────────────────────────────────
+// LEAVE TABLE
+// ─────────────────────────────────
+function leaveTable() {
+  if (!CL.session) { showPanel('join'); return; }
+  const restDB = loadRestDB();
+  const s = restDB?.sessions?.find(se => se.id === CL.session.sessionId);
+  if (!s) { leaveSession(); return; }
+  const myId = CL.session.myId;
+  const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
+  const {total} = calcPersonTotal(s, myId, restDB.menu);
+  let proxyTotal = 0;
+  managedProxyIds.forEach(pid => { proxyTotal += calcPersonTotal(s, pid, restDB.menu).total; });
+  const grandTotal = total + proxyTotal;
+  const hasPaid = (s.payments||[]).some(pay => pay.personId === myId && pay.status === 'paid');
+  if (grandTotal > 0 && !hasPaid) {
+    toast('⚠️ Debes pagar tu cuenta antes de salir de la mesa');
+    showPanel('pago');
+    return;
+  }
+  if (!confirm('¿Salir de la Mesa #' + s.tableNumber + '? No podrás volver a unirte con el mismo código una vez que la sesión termine.')) return;
+  leaveSession();
+}
+
+// ─────────────────────────────────
+// TIP TOGGLE
+// ─────────────────────────────────
+function onTipToggle() {
+  includeTip = !includeTip;
+  ['tip-checkbox','tip-checkbox-pago'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.checked = includeTip;
+  });
+  renderMesa(); renderPago();
+}
+
+// ─────────────────────────────────
+// PROXY GUEST (from client side)
+// ─────────────────────────────────
+function openProxyModal() {
+  if (!CL.session) { toast('⚠️ Únete a una mesa primero'); return; }
+  document.getElementById('client-proxy-name').value = '';
+  openModal('modal-proxy');
+}
+
+function addClientProxy() {
+  const name = document.getElementById('client-proxy-name').value.trim();
+  if (!name) { toast('⚠️ Ingresa el nombre'); return; }
+  const restDB = loadRestDB();
+  if (!restDB || !CL.session) return;
+  const s = restDB.sessions.find(se => se.id === CL.session.sessionId);
+  if (!s) return;
+  const newPerson = { id: 'proxy_' + Date.now(), name, isProxy: true, managedBy: CL.session.myId };
+  s.participants.push(newPerson);
+  saveRestDB(restDB);
+  closeModal('modal-proxy');
+  renderMesa();
+  toast('✅ ' + name + ' agregado — sus pagos los gestionas tú');
+}
+
+// ─────────────────────────────────
+// RENDER MESA (real-time)
+// ─────────────────────────────────
+function renderMesa() {
+  const noSes = document.getElementById('mesa-no-session');
+  const actSes = document.getElementById('mesa-active');
+  if (!CL.session) { noSes.style.display='block'; actSes.style.display='none'; return; }
+  noSes.style.display = 'none'; actSes.style.display = 'block';
+  const restDB = loadRestDB();
+  const s = restDB?.sessions?.find(se => se.id === CL.session.sessionId);
+  if (!s) { CL.session = null; saveC(); renderMesa(); return; }
+
+  // Bar
+  document.getElementById('mesa-bar').innerHTML = `
+    <div class="restaurant-info">
+      <div class="restaurant-icon">🪑</div>
+      <div>
+        <div style="font-weight:600;font-size:16px">Mesa #${s.tableNumber} · ${CL.session.restaurantName}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">${COUNTRIES[CL.country]?.flag||''} ${COUNTRIES[CL.country]?.name||''} · ${elapsedMin(s.openedAt)} min activa</div>
+      </div>
+    </div>
+    <div class="stat-pills">
+      <div class="stat-pill">👥 <strong>${s.participants?.length||0}</strong> personas</div>
+      <div class="stat-pill">🍽️ <strong>${s.orders?.length||0}</strong> pedidos</div>
+      <div class="stat-pill" style="color:var(--green)">● <strong style="color:var(--green)">En curso</strong></div>
+    </div>`;
+
+  // Avatars (including proxy guests)
+  const strip = document.getElementById('mesa-avatars');
+  strip.innerHTML = '';
+  (s.participants||[]).forEach((p, i) => {
+    const isMe = p.id === CL.session.myId;
+    const isManagedByMe = p.isProxy && p.managedBy === CL.session.myId;
+    const proxyLabel = p.isProxy ? '<span style="font-size:10px;color:var(--cyan)"> 🔹</span>' : '';
+    strip.innerHTML += `<div class="av-chip${isMe?' me':''}${isManagedByMe?' me':''}">
+      <div class="av-dot" style="background:${AV_COLORS[i%8]}">${initials(p.name)}</div>
+      <span class="av-name">${p.name}${isMe?' (yo)':''}${proxyLabel}</span>
+    </div>`;
+  });
+
+  // My orders (including managed proxies)
+  const myId = CL.session.myId;
+  const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
+  const myOrders = (s.orders||[]).filter(o => o.type==='individual' && (o.personId===myId || managedProxyIds.includes(o.personId)));
+  const tableOrders = (s.orders||[]).filter(o => o.type==='shared' || (o.type==='individual' && o.personId!==myId && !managedProxyIds.includes(o.personId)));
+
+  document.getElementById('my-orders-count').textContent = myOrders.length + ' items';
+  document.getElementById('table-orders-count').textContent = tableOrders.length + ' items';
+
+  const myList = document.getElementById('my-orders-list');
+  myList.innerHTML = '';
+  if (!myOrders.length) { myList.innerHTML = '<div class="empty" style="padding:20px"><p style="font-size:13px">Sin pedidos propios</p></div>'; }
+  myOrders.forEach(o => {
+    const mi = restDB.menu.find(m => m.id === o.menuItemId) || {emoji:'🍽️',name:'?',price:0};
+    const ownerName = o.personId === myId ? 'Para mí' : (s.participants.find(p=>p.id===o.personId)?.name||'?') + ' (gestionado por mí)';
+    myList.innerHTML += `<div class="order-item mine">
+      <div class="order-emoji">${mi.emoji}</div>
+      <div><div class="order-name">${mi.name}</div><div class="order-person">${ownerName}</div></div>
+      <span class="badge badge-blue" style="margin-left:auto;margin-right:12px">Individual</span>
+      <div class="order-price">${fmtC(mi.price*o.qty)}</div>
+    </div>`;
+  });
+
+  const tableList = document.getElementById('table-orders-list');
+  tableList.innerHTML = '';
+  if (!tableOrders.length) { tableList.innerHTML = '<div class="empty" style="padding:20px"><p style="font-size:13px">Sin más pedidos</p></div>'; }
+  tableOrders.forEach(o => {
+    const mi = restDB.menu.find(m => m.id === o.menuItemId) || {emoji:'🍽️',name:'?',price:0};
+    const isShared = o.type === 'shared';
+    let sharedLabel = '';
+    if (isShared) {
+      if (o.sharedWith === 'ALL') sharedLabel = 'Todos los comensales';
+      else if (Array.isArray(o.sharedWith)) { sharedLabel = '×' + o.sharedWith.length + ' personas'; }
+      else sharedLabel = o.personName;
+    }
+    tableList.innerHTML += `<div class="order-item">
+      <div class="order-emoji">${mi.emoji}</div>
+      <div><div class="order-name">${mi.name}</div><div class="order-person">${isShared?'Compartido: '+sharedLabel:o.personName}</div></div>
+      <span class="badge ${isShared?'badge-amber':'badge-gray'}" style="margin-left:auto;margin-right:12px">${isShared?'Compartido':'Individual'}</span>
+      <div class="order-price">${fmtC(mi.price*o.qty)}</div>
+    </div>`;
+  });
+
+  // My account breakdown (tip-aware)
+  const {sub, tax, tip, total} = calcPersonTotal(s, myId, restDB.menu);
+  const myPersonalTotal = total - tip + (includeTip ? tip : 0);
+  let proxyTotal = 0;
+  managedProxyIds.forEach(pid => {
+    const {total: pt, tip: ptip} = calcPersonTotal(s, pid, restDB.menu);
+    proxyTotal += pt - ptip + (includeTip ? ptip : 0);
+  });
+  const grandMine = myPersonalTotal + proxyTotal;
+  const paidAmt = (s.payments||[]).filter(p => p.personId===myId && p.status==='paid').reduce((t,p)=>t+p.amount,0);
+  document.getElementById('my-total').textContent = fmtC(grandMine);
+  const tipLabel = s.tip > 0 ? (includeTip ? ` · Propina ${s.tip}% ✓` : ' · Sin propina') : '';
+  document.getElementById('my-total-meta').textContent = (COUNTRIES[CL.country]?.currency||'COP') + ' · IVA ' + s.tax + '%' + tipLabel;
+  document.getElementById('my-paid').textContent = fmtC(paidAmt);
+  document.getElementById('my-due').textContent = fmtC(grandMine - paidAmt);
+  // Personal total row (shown only when managing proxy guests)
+  const personalRow = document.getElementById('my-personal-total-row');
+  if (managedProxyIds.length > 0) {
+    personalRow.style.display = 'block';
+    document.getElementById('my-personal-total').textContent = fmtC(myPersonalTotal);
+  } else {
+    personalRow.style.display = 'none';
+  }
+  // Tip toggle (shown when session has a suggested tip)
+  const tipRow = document.getElementById('tip-toggle-row');
+  if (s.tip > 0) {
+    tipRow.style.display = 'block';
+    document.getElementById('tip-pct-mesa').textContent = s.tip;
+    document.getElementById('tip-checkbox').checked = includeTip;
+  } else {
+    tipRow.style.display = 'none';
+  }
+
+  const rows = document.getElementById('my-account-rows');
+  rows.innerHTML = '';
+  // My own individual orders
+  const myOwnOrders = (s.orders||[]).filter(o => o.type==='individual' && o.personId===myId);
+  myOwnOrders.forEach(o => { const mi = restDB.menu.find(m => m.id===o.menuItemId); if(mi) rows.innerHTML+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
+  const sharedOrders = (s.orders||[]).filter(o => o.type==='shared');
+  sharedOrders.forEach(o => {
+    const mi = restDB.menu.find(m => m.id===o.menuItemId); if(!mi) return;
+    const divisor = o.sharedWith === 'ALL' ? (s.participants?.length||1) : (Array.isArray(o.sharedWith) ? o.sharedWith.length : 1);
+    const inList = o.sharedWith === 'ALL' || (Array.isArray(o.sharedWith) && o.sharedWith.includes(myId));
+    if (inList) rows.innerHTML += `<div class="pb-row"><span class="pb-label">${mi.name} (÷${divisor})</span><span class="pb-val">${fmtC(mi.price*o.qty/divisor)}</span></div>`;
+  });
+  // Transferred debts (from removed participants)
+  (s.transferredDebts||[]).filter(td => td.toPersonId === myId).forEach(td => {
+    rows.innerHTML += `<div class="pb-row"><span class="pb-label" style="color:var(--amber)">Saldo transferido (${td.fromName})</span><span class="pb-val">${fmtC(td.amount)}</span></div>`;
+  });
+  if (sub > 0) {
+    if (s.tax > 0) rows.innerHTML += `<div class="pb-row"><span class="pb-label">IVA (${s.tax}%)</span><span class="pb-val">${fmtC(tax)}</span></div>`;
+    if (s.tip > 0 && includeTip) rows.innerHTML += `<div class="pb-row"><span class="pb-label">Propina (${s.tip}%)</span><span class="pb-val">${fmtC(tip)}</span></div>`;
+  }
+
+  // Per-proxy breakdown (only visible to managing client)
+  const proxyBox = document.getElementById('my-proxy-accounts');
+  proxyBox.innerHTML = '';
+  if (managedProxyIds.length > 0) {
+    managedProxyIds.forEach(pid => {
+      const proxy = (s.participants||[]).find(p => p.id === pid); if (!proxy) return;
+      const {total: pTotal, sub: pSub} = calcPersonTotal(s, pid, restDB.menu);
+      const pOrders = (s.orders||[]).filter(o => o.type==='individual' && o.personId===pid);
+      let html = `<div style="margin-top:10px;padding:10px;background:rgba(6,182,212,.07);border:1px solid rgba(6,182,212,.2);border-radius:var(--r)">
+        <div style="font-size:11px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">${proxy.name} 🔹 — a tu cargo</div>`;
+      pOrders.forEach(o => { const mi = restDB.menu.find(m => m.id===o.menuItemId); if(mi) html+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
+      sharedOrders.forEach(o => {
+        const mi = restDB.menu.find(m => m.id===o.menuItemId); if(!mi) return;
+        const divisor = o.sharedWith==='ALL'?(s.participants?.length||1):(Array.isArray(o.sharedWith)?o.sharedWith.length:1);
+        const inList = o.sharedWith==='ALL'||(Array.isArray(o.sharedWith)&&o.sharedWith.includes(pid));
+        if(inList) html+=`<div class="pb-row"><span class="pb-label">${mi.name} (÷${divisor})</span><span class="pb-val">${fmtC(mi.price*o.qty/divisor)}</span></div>`;
+      });
+      html += `<div class="pb-row" style="border-top:1px solid rgba(6,182,212,.2);margin-top:4px;padding-top:6px"><span class="pb-label" style="font-weight:600">Total ${proxy.name}</span><span class="pb-val" style="color:var(--cyan)">${fmtC(pTotal)}</span></div></div>`;
+      proxyBox.innerHTML += html;
+    });
+  }
+
+  // Update total label
+  document.getElementById('my-total-label').textContent = managedProxyIds.length > 0
+    ? 'Total (tú + comensales a cargo)' : 'Mi total a pagar';
+}
+
+// ─────────────────────────────────
+// RENDER PAGO (real-time)
+// ─────────────────────────────────
+function renderPago() {
+  const noSes = document.getElementById('pago-no-session');
+  const actSes = document.getElementById('pago-active');
+  if (!CL.session) { noSes.style.display='block'; actSes.style.display='none'; return; }
+  noSes.style.display='none'; actSes.style.display='block';
+  const restDB = loadRestDB();
+  const s = restDB?.sessions?.find(se => se.id === CL.session.sessionId); if (!s) return;
+  const c = COUNTRIES[CL.country] || COUNTRIES.CO;
+  document.getElementById('pago-country-badge').textContent = c.flag + ' ' + c.currency;
+  // Methods
+  const ml = document.getElementById('payment-methods-list'); ml.innerHTML = '';
+  c.methods.forEach((m, i) => {
+    const div = document.createElement('div');
+    div.className = 'method-card' + (i===selectedMethod?' selected':'');
+    div.innerHTML = `<div class="m-icon" style="background:${m.bg}">${m.icon}</div><div><div class="m-name">${m.name}</div><div class="m-sub">${m.sub}</div></div><div class="m-radio"></div>`;
+    div.onclick = () => { selectedMethod = i; renderPago(); };
+    ml.appendChild(div);
+  });
+  // Totals (tip-aware)
+  const myId = CL.session.myId;
+  const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
+  const {sub, tax, tip, total} = calcPersonTotal(s, myId, restDB.menu);
+  const myPersonalPago = total - tip + (includeTip ? tip : 0);
+  let proxyTotal = 0;
+  managedProxyIds.forEach(pid => {
+    const {total: pt, tip: ptip} = calcPersonTotal(s, pid, restDB.menu);
+    proxyTotal += pt - ptip + (includeTip ? ptip : 0);
+  });
+  const grandMine = myPersonalPago + proxyTotal;
+  // Personal total row
+  const pagoPersonalRow = document.getElementById('pago-personal-row');
+  if (managedProxyIds.length > 0) {
+    pagoPersonalRow.style.display = 'block';
+    document.getElementById('pago-personal-amt').textContent = fmtC(myPersonalPago);
+  } else {
+    pagoPersonalRow.style.display = 'none';
+  }
+  document.getElementById('pago-amount-big').textContent = fmtC(grandMine);
+  document.getElementById('pago-amount-sub').textContent = c.currency + ' · ' + CL.session.myName + ' · Mesa #' + s.tableNumber;
+  document.getElementById('pay-now-btn').textContent = 'Pagar ' + fmtC(grandMine) + ' →';
+  // Tip toggle
+  const tipPago = document.getElementById('tip-toggle-pago');
+  if (s.tip > 0) {
+    tipPago.style.display = 'block';
+    document.getElementById('tip-pct-pago').textContent = s.tip;
+    document.getElementById('tip-checkbox-pago').checked = includeTip;
+  } else {
+    tipPago.style.display = 'none';
+  }
+  const breakdown = document.getElementById('pago-breakdown'); breakdown.innerHTML = '';
+  const myOrders = (s.orders||[]).filter(o => o.type==='individual' && (o.personId===myId || managedProxyIds.includes(o.personId)));
+  myOrders.forEach(o => { const mi = restDB?.menu?.find(m=>m.id===o.menuItemId); if(mi) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
+  const sharedOrders = (s.orders||[]).filter(o=>o.type==='shared');
+  sharedOrders.forEach(o => {
+    const mi = restDB?.menu?.find(m=>m.id===o.menuItemId); if(!mi) return;
+    const divisor = o.sharedWith === 'ALL' ? (s.participants?.length||1) : (Array.isArray(o.sharedWith)?o.sharedWith.length:1);
+    const inList = o.sharedWith==='ALL' || (Array.isArray(o.sharedWith) && o.sharedWith.includes(myId));
+    if (inList) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label">${mi.name} ÷${divisor}</span><span class="pb-val">${fmtC(mi.price*o.qty/divisor)}</span></div>`;
+  });
+  (s.transferredDebts||[]).filter(td=>td.toPersonId===myId).forEach(td => {
+    breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label" style="color:var(--amber)">Saldo transferido (${td.fromName})</span><span class="pb-val">${fmtC(td.amount)}</span></div>`;
+  });
+  if (proxyTotal > 0) breakdown.innerHTML += `<div class="pb-row"><span class="pb-label">Comensales a mi cargo 🔹</span><span class="pb-val">${fmtC(proxyTotal)}</span></div>`;
+  if (s.tax>0) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label">IVA (${s.tax}%)</span><span class="pb-val">${fmtC(tax)}</span></div>`;
+  if (s.tip>0 && includeTip) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label">Propina (${s.tip}%)</span><span class="pb-val">${fmtC(tip)}</span></div>`;
+  breakdown.innerHTML+=`<div class="pb-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:10px"><span style="font-size:14px;font-weight:600">Total</span><span style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700">${fmtC(grandMine)}</span></div>`;
+}
+
+// ─────────────────────────────────
+// PROCESS PAYMENT
+// ─────────────────────────────────
+function processPayment() {
+  const restDB = loadRestDB(); if (!restDB || !CL.session) return;
+  const s = restDB.sessions.find(se => se.id === CL.session.sessionId); if (!s) return;
+  const myId = CL.session.myId;
+  const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
+  const {total, tip, tax} = calcPersonTotal(s, myId, restDB.menu);
+  const myPersonalFinal = total - tip + (includeTip ? tip : 0);
+  let proxyTotal = 0;
+  managedProxyIds.forEach(pid => {
+    const {total: pt, tip: ptip} = calcPersonTotal(s, pid, restDB.menu);
+    proxyTotal += pt - ptip + (includeTip ? ptip : 0);
+  });
+  const grandMine = myPersonalFinal + proxyTotal;
+  const c = COUNTRIES[CL.country] || COUNTRIES.CO;
+  const method = c.methods[selectedMethod]?.name || '?';
+  const ref = 'SGR-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*999999)).padStart(6,'0');
+  s.payments = s.payments || [];
+  s.payments.push({personId: myId, amount: grandMine, method, status:'paid', ref, paidAt: new Date().toISOString(), tipIncluded: includeTip});
+  saveRestDB(restDB);
+  const histEntry = {ref, amount: grandMine, method, restaurantName: CL.session.restaurantName, tableNumber: CL.session.tableNumber, paidAt: new Date().toISOString(), country: CL.country};
+  CL.payments = CL.payments || [];
+  CL.payments.push(histEntry);
+  saveC();
+  document.getElementById('exito-sub').textContent = CL.session.restaurantName + ' · Mesa #' + s.tableNumber;
+  document.getElementById('exito-receipt').innerHTML = `
+    <div class="section-title" style="margin-bottom:14px">Recibo de pago</div>
+    <div class="rr"><span class="rr-k">Método</span><span class="rr-v">${method}</span></div>
+    <div class="rr"><span class="rr-k">Monto pagado</span><span class="rr-v" style="color:var(--green)">${fmtC(grandMine)}</span></div>
+    ${s.tax>0?`<div class="rr"><span class="rr-k">IVA (${s.tax}%)</span><span class="rr-v">${fmtC(tax)}</span></div>`:''}
+    ${s.tip>0&&includeTip?`<div class="rr"><span class="rr-k">Propina (${s.tip}%)</span><span class="rr-v">${fmtC(tip)}</span></div>`:''}
+    ${s.tip>0&&!includeTip?`<div class="rr"><span class="rr-k">Propina</span><span class="rr-v" style="color:var(--text3)">No incluida</span></div>`:''}
+    ${proxyTotal>0?`<div class="rr"><span class="rr-k">Comensales a cargo</span><span class="rr-v">${fmtC(proxyTotal)}</span></div>`:''}
+    <div class="rr"><span class="rr-k">Mesa</span><span class="rr-v">#${s.tableNumber} · ${s.participants?.length||0} personas</span></div>
+    <div class="rr"><span class="rr-k">Restaurante</span><span class="rr-v">${CL.session.restaurantName}</span></div>
+    <div class="rr"><span class="rr-k">Referencia</span><span class="rr-v" style="font-family:monospace;font-size:11px;color:var(--text3)">${ref}</span></div>`;
+  showPanel('exito');
+}
+
+function leaveSession() {
+  CL.session = null; saveC();
+  document.getElementById('sidebar-sub').textContent = 'Sin mesa';
+  document.getElementById('live-indicator').style.display = 'none';
+  document.getElementById('topbar-pay-btn').style.display = 'none';
+  showPanel('join'); renderMesa();
+}
+
+// ─────────────────────────────────
+// HISTORY
+// ─────────────────────────────────
+function renderHistory() {
+  const payments = CL.payments || [];
+  const total = payments.reduce((s,p) => s+p.amount, 0);
+  const avg = payments.length ? total/payments.length : 0;
+  document.getElementById('hist-total').textContent = fmtC(total);
+  document.getElementById('hist-count').textContent = payments.length;
+  document.getElementById('hist-avg').textContent = fmtC(avg);
+  const c = COUNTRIES[CL.country];
+  document.getElementById('hist-currency').textContent = c?.currency || 'COP';
+  const list = document.getElementById('hist-list');
+  if (!payments.length) { list.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>Sin historial aún</p></div>'; return; }
+  list.innerHTML = '';
+  [...payments].reverse().forEach((p, i) => {
+    list.innerHTML += `<div class="order-item">
+      <div style="width:42px;height:42px;background:${AV_COLORS[i%8]};border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0">#${p.tableNumber}</div>
+      <div><div class="order-name">${p.restaurantName} · Mesa #${p.tableNumber}</div><div class="order-person">${new Date(p.paidAt).toLocaleDateString()} · ${p.method}</div></div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700">${fmtC(p.amount)}</div>
+        <span class="badge badge-green" style="margin-top:3px">✓ Pagado</span>
+      </div>
+    </div>`;
+  });
+}
+
+function rateStar(n) { document.querySelectorAll('.star').forEach((s,i)=>s.classList.toggle('lit',i<n)); }
+
+// ─────────────────────────────────
+// SIDEBAR TOGGLE
+// ─────────────────────────────────
+function toggleSidebar() {
+  const sb = document.getElementById('main-sidebar');
+  sb.classList.toggle('collapsed');
+  const btn = sb.querySelector('.sidebar-toggle');
+  btn.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+  btn.title = sb.classList.contains('collapsed') ? 'Expandir menú' : 'Colapsar menú';
+}
+function openMobileSidebar() {
+  document.getElementById('main-sidebar').classList.add('mobile-open');
+  document.getElementById('sidebar-backdrop').classList.add('open');
+}
+function closeMobileSidebar() {
+  document.getElementById('main-sidebar').classList.remove('mobile-open');
+  document.getElementById('sidebar-backdrop').classList.remove('open');
+}
+
+launchApp();
+</script>
+</body>
+</html>

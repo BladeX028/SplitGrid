@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SplitGrid · Panel Restaurante</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/splitgrid.css">
+</head>
+<body>
+
+<!-- ═══ APP ═══ -->
+<div id="app">
+
+<aside class="sidebar" id="main-sidebar">
+  <div class="sidebar-logo">
+    <div>
+      <div class="logo-mark">Split<span>Grid</span></div>
+      <div class="logo-sub">Panel Restaurante</div>
+    </div>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Colapsar menú">◀</button>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">Principal</div>
+    <button class="nav-item active" onclick="showPanel('dashboard')"><span class="nav-icon">⬛</span><span class="nav-label"> Dashboard</span></button>
+    <button class="nav-item" onclick="showPanel('mesas')"><span class="nav-icon">🪑</span><span class="nav-label"> Mesas</span> <span class="nav-badge" id="active-tables-badge">0</span></button>
+    <button class="nav-item" onclick="showPanel('menu')"><span class="nav-icon">📋</span><span class="nav-label"> Menú</span></button>
+    <div class="nav-section">Gestión</div>
+    <button class="nav-item" onclick="showPanel('historial')"><span class="nav-icon">📊</span><span class="nav-label"> Historial</span></button>
+    <button class="nav-item" onclick="showPanel('config')"><span class="nav-icon">⚙️</span><span class="nav-label"> Config</span></button>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="rest-avatar" id="sidebar-initials">RC</div>
+      <div class="rest-info">
+        <div class="rest-name" id="sidebar-rest-name">Restaurante</div>
+        <div class="rest-plan" id="sidebar-country">Colombia · COP</div>
+      </div>
+    </div>
+    <button class="btn btn-danger btn-full btn-sm" style="margin-top:10px" onclick="doLogout()">
+      ← Cerrar sesión
+    </button>
+  </div>
+</aside>
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
+
+<main class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" onclick="openMobileSidebar()" aria-label="Abrir menú">☰</button>
+    <div class="topbar-title" id="topbar-title">Dashboard</div>
+    <div class="topbar-actions">
+      <div class="topbar-live"><div class="live-dot"></div><span class="live-label">EN VIVO</span></div>
+      <button class="btn btn-ghost btn-sm" id="topbar-currency">🇨🇴 COP</button>
+      <button class="btn btn-primary" onclick="openNewTableModal()">+ Nueva sesión</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ════ DASHBOARD ════ -->
+    <div class="panel active" id="panel-dashboard">
+      <div class="stats-row" style="grid-template-columns:repeat(auto-fill,minmax(155px,1fr))">
+        <div class="stat-card"><div class="stat-label">Ventas hoy</div><div class="stat-value" id="dash-sales">$0</div><div class="stat-badge badge-green">Hoy</div></div>
+        <div class="stat-card"><div class="stat-label">Mesas activas</div><div class="stat-value" id="dash-active">0</div><div class="stat-badge badge-blue" id="dash-occ">0%</div></div>
+        <div class="stat-card"><div class="stat-label">Pendientes</div><div class="stat-value" id="dash-pending">$0</div><div class="stat-badge badge-amber" id="dash-pending-tables">0 mesas</div></div>
+        <div class="stat-card"><div class="stat-label">Clientes ahora</div><div class="stat-value" id="dash-clients">0</div><div class="stat-badge badge-purple">En mesa</div></div>
+        <div class="stat-card"><div class="stat-label">Clientes hoy</div><div class="stat-value" id="dash-clients-today">0</div><div class="stat-badge badge-cyan">En el día</div></div>
+      </div>
+      <div class="section-header">
+        <div class="section-title">Mesas activas</div>
+        <button class="btn btn-ghost btn-sm" onclick="showPanel('mesas')">Ver todas →</button>
+      </div>
+      <div class="tables-grid" id="dash-tables"></div>
+      <div class="section-header" style="margin-top:4px">
+        <div class="section-title">Pedidos recientes</div>
+      </div>
+      <div class="orders-list" id="dash-orders"><div class="empty"><div class="empty-icon">🍽️</div><p>Sin pedidos aún</p></div></div>
+    </div>
+
+    <!-- ════ MESAS ════ -->
+    <div class="panel" id="panel-mesas">
+      <div class="tabs-row">
+        <button class="tab-btn active" onclick="switchTab(this,'tab-activas')">Activas</button>
+        <button class="tab-btn" onclick="switchTab(this,'tab-todas')">Todas las mesas</button>
+      </div>
+      <div id="tab-activas"><div class="tables-grid" id="all-active-tables"></div></div>
+      <div id="tab-todas" style="display:none"><div class="tables-grid" id="all-tables-grid"></div></div>
+    </div>
+
+    <!-- ════ DETALLE MESA ════ -->
+    <div class="panel" id="panel-detail">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <button class="btn btn-ghost btn-sm" onclick="showPanel('mesas')">← Volver</button>
+        <div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700" id="detail-title">Mesa</div>
+          <div style="font-size:12px;color:var(--text3)" id="detail-sub"></div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="openQRModal()">📤 QR Invitados</button>
+          <button class="btn btn-ghost btn-sm" onclick="openAddOrderModal()">+ Agregar pedido</button>
+          <button class="btn btn-danger btn-sm" onclick="closeTableSession()">Cerrar mesa</button>
+        </div>
+      </div>
+      <div class="detail-layout">
+        <div>
+          <div class="section-header">
+            <div class="section-title">Pedidos en mesa</div>
+          </div>
+          <div class="orders-list" id="detail-orders"></div>
+        </div>
+        <div>
+          <div class="person-breakdown" id="detail-breakdown">
+            <div class="pb-title">Por persona</div>
+            <div id="pb-persons"></div>
+            <div class="total-box" id="detail-total-box">
+              <div class="total-label">Total mesa</div>
+              <div class="total-amount" id="detail-grand-total">$0</div>
+              <div class="total-meta" id="detail-total-meta"></div>
+              <div style="margin-top:10px;display:flex;gap:6px">
+                <div style="flex:1;background:var(--green-bg);border-radius:var(--r);padding:8px;text-align:center">
+                  <div style="font-size:10px;color:var(--green);font-weight:700">PAGADO</div>
+                  <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--green)" id="detail-paid">$0</div>
+                </div>
+                <div style="flex:1;background:var(--amber-bg);border-radius:var(--r);padding:8px;text-align:center">
+                  <div style="font-size:10px;color:var(--amber);font-weight:700">PENDIENTE</div>
+                  <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;color:var(--amber)" id="detail-due">$0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ MENÚ ════ -->
+    <div class="panel" id="panel-menu">
+      <div class="section-header">
+        <div class="section-title">Gestión de menú</div>
+        <button class="btn btn-primary btn-sm" onclick="openAddMenuModal()">+ Nuevo plato</button>
+      </div>
+      <div class="cat-row" id="menu-cats"></div>
+      <div class="menu-grid" id="menu-grid"></div>
+    </div>
+
+    <!-- ════ HISTORIAL ════ -->
+    <div class="panel" id="panel-historial">
+      <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat-card"><div class="stat-label">Ingresos totales</div><div class="stat-value" id="hist-total">$0</div><div class="stat-badge badge-green">Todas las sesiones</div></div>
+        <div class="stat-card"><div class="stat-label">Sesiones cerradas</div><div class="stat-value" id="hist-count">0</div><div class="stat-badge badge-blue">Histórico</div></div>
+        <div class="stat-card"><div class="stat-label">Ticket promedio</div><div class="stat-value" id="hist-avg">$0</div><div class="stat-badge badge-purple">Por sesión</div></div>
+      </div>
+      <div class="section-header"><div class="section-title">Sesiones cerradas</div></div>
+      <div class="orders-list" id="hist-list"><div class="empty"><div class="empty-icon">📋</div><p>Sin historial</p></div></div>
+    </div>
+
+    <!-- ════ CONFIG ════ -->
+    <div class="panel" id="panel-config">
+      <div class="form-section">
+        <div class="form-title">Información del restaurante</div>
+        <div class="form-row">
+          <div class="form-group"><label>Nombre</label><input id="cfg-name" placeholder="Mi Restaurante"></div>
+          <div class="form-group"><label>Dirección</label><input id="cfg-address" placeholder="Calle 123"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>País (detectado automáticamente)</label>
+            <div id="cfg-country-display" style="background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:9px 12px;font-size:13.5px;color:var(--text2)">—</div>
+          </div>
+          <div class="form-group"><label>Número de mesas</label><input type="number" id="cfg-tables" min="1" max="100"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>IVA / Impuesto (%)</label><input type="number" id="cfg-tax" min="0" max="50" step="0.5"></div>
+          <div class="form-group"><label>Propina sugerida (%)</label><input type="number" id="cfg-tip" min="0" max="30"></div>
+        </div>
+        <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</main>
+</div><!-- /app -->
+
+<!-- ═══ MODAL: Nueva sesión ═══ -->
+<div class="modal-overlay" id="modal-new-table">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Abrir sesión de mesa</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-new-table')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Mesa número</label><select id="nt-table-select"></select></div>
+      <div class="form-group"><label>Modo de división por defecto</label>
+        <select id="nt-split">
+          <option value="by_item">🍽️ Por consumo individual</option>
+          <option value="equal">⚖️ Partes iguales</option>
+          <option value="custom">✏️ Personalizado</option>
+        </select>
+      </div>
+      <div style="background:var(--bg4);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--text3)">
+        💡 El código QR se genera automáticamente. Los clientes lo escanean para unirse.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-new-table')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="createSession()">Abrir mesa →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: QR ═══ -->
+<div class="modal-overlay" id="modal-qr">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="qr-modal-title">QR Mesa</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-qr')">✕</button></div>
+    <div class="modal-body" style="text-align:center">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Los clientes escanean este código o ingresan el código manualmente.</p>
+      <div style="background:white;border-radius:var(--r2);padding:24px;display:inline-flex;margin-bottom:16px">
+        <div class="qr-pattern"></div>
+      </div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:800;letter-spacing:4px;color:var(--text);margin-bottom:4px" id="qr-join-code">------</div>
+      <div style="font-size:12px;color:var(--text3)" id="qr-join-url">splitgrid.app/join/------</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-qr')">Cerrar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="copyJoinCode()">📋 Copiar código</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Agregar pedido (con selector de personas para compartir) ═══ -->
+<div class="modal-overlay" id="modal-add-order">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Agregar pedido</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-order')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Item del menú</label><select id="ao-item"></select></div>
+      <div class="form-row">
+        <div class="form-group"><label>Cantidad</label><input type="number" id="ao-qty" value="1" min="1"></div>
+        <div class="form-group"><label>Tipo</label>
+          <select id="ao-type" onchange="toggleShareUI()">
+            <option value="individual">🙋 Individual (una persona)</option>
+            <option value="shared">🤝 Compartido (varias personas)</option>
+          </select>
+        </div>
+      </div>
+      <!-- Individual: asignar a UNA persona -->
+      <div id="ao-individual-section" class="form-group">
+        <label>Asignar a (participante)</label>
+        <select id="ao-person"></select>
+      </div>
+      <!-- Shared: seleccionar MÚLTIPLES personas o todos -->
+      <div id="ao-shared-section" style="display:none">
+        <label style="font-size:12px;font-weight:500;color:var(--text3);display:block;margin-bottom:8px">Selecciona con quién se comparte</label>
+        <button class="share-all-btn" id="ao-share-all-btn" onclick="toggleShareAll()">
+          <span style="font-size:16px">👥</span>
+          Compartido entre TODOS los comensales
+        </button>
+        <div class="share-person-list" id="ao-share-person-list"></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px" id="ao-share-count">Ninguna persona seleccionada</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-add-order')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="addOrder()">Agregar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Agregar invitado sin teléfono (proxy) ═══ -->
+<div class="modal-overlay" id="modal-add-proxy">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Agregar comensal sin app</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-proxy')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--cyan-bg);border:1px solid rgba(6,182,212,.25);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--cyan);margin-bottom:16px">
+        💡 Agrega a alguien que no tiene celular o no quiere usar la app. Su cuenta quedará a cargo del gestor de mesa.
+      </div>
+      <div class="form-group">
+        <label>Nombre del comensal</label>
+        <input id="proxy-name" placeholder="Nombre de la persona" maxlength="40">
+      </div>
+      <div class="form-group">
+        <label>¿Quién gestiona sus pagos?</label>
+        <select id="proxy-manager"></select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-add-proxy')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="addProxyGuest()">Agregar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Agregar item menú ═══ -->
+<div class="modal-overlay" id="modal-add-menu">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Nuevo item del menú</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-menu')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label>Nombre del plato</label><input id="am-name" placeholder="Nombre"></div>
+        <div class="form-group"><label>Emoji</label><input id="am-emoji" placeholder="🍛" maxlength="4"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Precio</label><input type="number" id="am-price" placeholder="0" min="0"></div>
+        <div class="form-group"><label>Categoría</label>
+          <select id="am-cat">
+            <option>Platos Fuertes</option><option>Entradas</option>
+            <option>Bebidas</option><option>Postres</option><option>Compartidos</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-add-menu')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="addMenuItem()">Agregar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Quitar comensal ═══ -->
+<div class="modal-overlay" id="modal-remove-guest">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Quitar comensal</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-remove-guest')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="remove-guest-info" style="background:var(--red-bg);border:1px solid rgba(239,68,68,.2);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--red);margin-bottom:16px"></div>
+      <div id="remove-redistrib-section">
+        <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">¿Cómo redistribuir el saldo pendiente?</div>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--bg4);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;font-family:'Inter',sans-serif">
+          <input type="radio" name="redistrib" id="redistrib-equal" value="equal" checked onchange="toggleRedistribUI()">
+          <span style="font-size:13px">Dividir equitativamente entre todos los demás</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--bg4);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-family:'Inter',sans-serif">
+          <input type="radio" name="redistrib" id="redistrib-custom" value="custom" onchange="toggleRedistribUI()">
+          <span style="font-size:13px">Seleccionar entre quiénes dividir</span>
+        </label>
+        <div id="redistrib-person-list" style="display:none;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-remove-guest')">Cancelar</button>
+      <button class="btn btn-danger" style="flex:1" onclick="confirmRemoveGuest()">Quitar →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-msg">✅ Listo</span></div>
+
+<script src="js/shared.js"></script>
+<script>
+// ─────────────────────────────────
+// STATE
+// ─────────────────────────────────
+let DB = loadRestDB();
+let currentDetailSession = null;
+let currentMenuCat = 'Todos';
+let shareAllSelected = false;
+let selectedSharePersons = new Set();
+let personToRemove = null;
+let redistribSelected = new Set();
+
+// Auth guard
+if (!DB || !DB._loggedIn) { window.location.href = 'index.html'; }
+
+function save() { saveRestDB(DB); }
+function fmtR(n) { return fmt(n, DB.restaurant.country); }
+
+// ─────────────────────────────────
+// LOGOUT
+// ─────────────────────────────────
+function doLogout() {
+  if (!confirm('¿Cerrar sesión del panel de restaurante?')) return;
+  DB._loggedIn = false;
+  save();
+  window.location.href = 'index.html';
+}
+
+// ─────────────────────────────────
+// INIT
+// ─────────────────────────────────
+function initApp() {
+  const c = COUNTRIES[DB.restaurant.country] || COUNTRIES.CO;
+  document.getElementById('sidebar-rest-name').textContent = DB.restaurant.name;
+  document.getElementById('sidebar-country').textContent = c.flag + ' ' + c.name + ' · ' + c.currency;
+  document.getElementById('sidebar-initials').textContent = initials(DB.restaurant.name);
+  document.getElementById('topbar-currency').textContent = c.flag + ' ' + c.currency;
+  document.getElementById('cfg-name').value = DB.restaurant.name;
+  document.getElementById('cfg-address').value = DB.restaurant.address || '';
+  document.getElementById('cfg-country-display').textContent = c.flag + ' ' + c.name + ' (' + c.currency + ') — detectado automáticamente';
+  document.getElementById('cfg-tables').value = DB.restaurant.numTables;
+  document.getElementById('cfg-tax').value = DB.restaurant.tax;
+  document.getElementById('cfg-tip').value = DB.restaurant.tip;
+  renderDashboard();
+  renderMenu();
+  renderHistory();
+  setInterval(() => { renderDashboard(); if (currentDetailSession) { const s = DB.sessions.find(se => se.id === currentDetailSession); if (s) renderDetailPanel(s); } }, 5000);
+}
+
+// ─────────────────────────────────
+// PANELS
+// ─────────────────────────────────
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  const titles = {dashboard:'Dashboard',mesas:'Mesas',menu:'Menú',historial:'Historial',config:'Configuración',detail:'Detalle de Mesa'};
+  document.getElementById('topbar-title').textContent = titles[id] || id;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const map = {dashboard:0,mesas:1,menu:2,historial:3,config:4};
+  if (map[id] !== undefined) document.querySelectorAll('.nav-item')[map[id]].classList.add('active');
+  if (id === 'mesas') renderAllTables();
+  if (id === 'historial') renderHistory();
+  if (window.innerWidth <= 768) closeMobileSidebar();
+}
+
+// ─────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────
+function renderDashboard() {
+  DB = loadRestDB(); // sync from localStorage (real-time)
+  const active = DB.sessions.filter(s => s.status === 'occupied' || s.status === 'paying');
+  const paidToday = DB.history.reduce((s, h) => s + (h.total || 0), 0);
+  const pendingTotal = active.reduce((s, se) => s + sessionTotal(se, DB.menu), 0);
+  const clients = active.reduce((s, se) => s + (se.participants?.length || 0), 0);
+  const today = new Date().toDateString();
+  const histToday = DB.history.filter(h => new Date(h.closedAt || h.openedAt).toDateString() === today);
+  const sessionsOpenedToday = DB.sessions.filter(s => new Date(s.openedAt).toDateString() === today);
+  const clientsToday = [...histToday, ...sessionsOpenedToday].reduce((acc, s) => acc + (s.participants?.length || 0), 0);
+  document.getElementById('dash-sales').textContent = fmtR(paidToday);
+  document.getElementById('dash-active').textContent = active.length + ' / ' + DB.tables.length;
+  document.getElementById('dash-occ').textContent = Math.round(active.length / DB.tables.length * 100) + '% ocupación';
+  document.getElementById('dash-pending').textContent = fmtR(pendingTotal);
+  document.getElementById('dash-pending-tables').textContent = active.length + ' mesas';
+  document.getElementById('dash-clients').textContent = clients;
+  document.getElementById('dash-clients-today').textContent = clientsToday;
+  document.getElementById('active-tables-badge').textContent = active.length;
+  const grid = document.getElementById('dash-tables');
+  grid.innerHTML = '';
+  active.slice(0, 6).forEach(s => grid.appendChild(makeTableCard(s)));
+  const allOrders = active.flatMap(s => (s.orders || []).map(o => ({...o, session: s})));
+  const ol = document.getElementById('dash-orders');
+  if (!allOrders.length) { ol.innerHTML = '<div class="empty"><div class="empty-icon">🍽️</div><p>Sin pedidos activos</p></div>'; return; }
+  ol.innerHTML = '';
+  allOrders.slice(-6).reverse().forEach(o => {
+    const mi = DB.menu.find(m => m.id === o.menuItemId) || {name: o.name||'?', emoji:'🍽️'};
+    ol.innerHTML += `<div class="order-item">
+      <div class="order-emoji">${mi.emoji}</div>
+      <div><div class="order-name">${mi.name}</div><div class="order-person">Mesa #${o.session.tableNumber} · ${o.personName}</div></div>
+      <span class="badge ${o.type==='shared'?'badge-amber':'badge-blue'}" style="margin-left:auto;margin-right:12px">${o.type==='shared'?'Compartido':'Individual'}</span>
+      <div class="order-price">${fmtR(mi.price * o.qty)}</div>
+    </div>`;
+  });
+}
+
+// ─────────────────────────────────
+// TABLE CARDS
+// ─────────────────────────────────
+function makeTableCard(s) {
+  const div = document.createElement('div');
+  const st = s.status === 'paying' ? 'paying' : 'occupied';
+  div.className = `table-card ${st}`;
+  div.onclick = () => openTableDetail(s.id);
+  const parts = s.participants || [];
+  const avs = parts.slice(0,4).map((p,i) => `<div class="t-av" style="background:${AV_COLORS[i%8]}">${initials(p.name)}</div>`).join('');
+  const more = parts.length > 4 ? `<div class="t-av" style="background:var(--bg4);color:var(--text3)">+${parts.length-4}</div>` : '';
+  div.innerHTML = `<div class="table-glow"></div>
+    <div class="table-num">Mesa #${s.tableNumber}</div>
+    <div class="table-status-txt" style="font-size:11px;font-weight:600;margin-bottom:10px;color:${st==='paying'?'var(--amber)':'var(--blue)'}">
+      ${st==='paying'?'⏳ Pagando':'● En curso · '+elapsedMin(s.openedAt)+' min'}
+    </div>
+    <div class="table-avatars">${avs}${more}</div>
+    <div class="table-total">${fmtR(sessionTotal(s, DB.menu))}</div>
+    <div class="table-meta">${parts.length} personas · ${(s.orders||[]).length} pedidos</div>`;
+  return div;
+}
+
+// ─────────────────────────────────
+// ALL TABLES
+// ─────────────────────────────────
+function renderAllTables() {
+  DB = loadRestDB();
+  const active = DB.sessions.filter(s => s.status === 'occupied' || s.status === 'paying');
+  const actGrid = document.getElementById('all-active-tables');
+  actGrid.innerHTML = '';
+  if (!active.length) { actGrid.innerHTML = '<div class="empty"><div class="empty-icon">🪑</div><p>No hay mesas activas</p></div>'; }
+  active.forEach(s => actGrid.appendChild(makeTableCard(s)));
+  const allGrid = document.getElementById('all-tables-grid');
+  allGrid.innerHTML = '';
+  DB.tables.forEach(t => {
+    const s = DB.sessions.find(se => (se.status==='occupied'||se.status==='paying') && se.tableId === t.id);
+    const div = document.createElement('div');
+    if (s) {
+      div.className = 'table-card ' + (s.status==='paying'?'paying':'occupied');
+      div.onclick = () => openTableDetail(s.id);
+      const parts = s.participants || [];
+      div.innerHTML = `<div class="table-glow"></div><div class="table-num">Mesa #${t.number}</div>
+        <div style="font-size:11px;font-weight:600;margin-bottom:10px;color:${s.status==='paying'?'var(--amber)':'var(--blue)'}">● ${s.status==='paying'?'Pagando':'En curso'}</div>
+        <div class="table-avatars">${parts.slice(0,4).map((p,i)=>`<div class="t-av" style="background:${AV_COLORS[i%8]}">${initials(p.name)}</div>`).join('')}</div>
+        <div class="table-total">${fmtR(sessionTotal(s,DB.menu))}</div><div class="table-meta">${parts.length} personas</div>`;
+    } else {
+      div.className = 'table-card free';
+      div.onclick = () => { document.getElementById('nt-table-select').value = t.id; openNewTableModal(); };
+      div.innerHTML = `<div class="table-num">Mesa #${t.number}</div><div style="font-size:11px;color:var(--text3);margin-bottom:10px">○ Disponible</div><div style="font-size:12px;color:var(--text3)">Toca para activar</div>`;
+    }
+    allGrid.appendChild(div);
+  });
+  const add = document.createElement('div');
+  add.className = 'table-card free';
+  add.style = 'border:2px dashed var(--border2);background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  add.onclick = openNewTableModal;
+  add.innerHTML = '<div style="text-align:center;color:var(--text3)"><div style="font-size:24px;margin-bottom:4px">+</div><div style="font-size:12px">Nueva sesión</div></div>';
+  allGrid.appendChild(add);
+}
+
+// ─────────────────────────────────
+// TABLE DETAIL
+// ─────────────────────────────────
+function openTableDetail(sessionId) {
+  currentDetailSession = sessionId;
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === sessionId);
+  if (!s) return;
+  document.getElementById('detail-title').textContent = 'Mesa #' + s.tableNumber;
+  document.getElementById('detail-sub').textContent = DB.restaurant.name + ' · ' + (s.participants||[]).length + ' personas · ' + elapsedMin(s.openedAt) + ' min';
+  showPanel('detail');
+  renderDetailPanel(s);
+}
+
+function renderDetailPanel(s) {
+  if (!s) return;
+  DB = loadRestDB();
+  const ol = document.getElementById('detail-orders');
+  ol.innerHTML = '';
+  if (!(s.orders||[]).length) { ol.innerHTML = '<div class="empty"><div class="empty-icon">🍽️</div><p>Sin pedidos. Usa "+ Agregar pedido"</p></div>'; }
+  s.orders.forEach(o => {
+    const mi = DB.menu.find(m => m.id === o.menuItemId) || {name: o.name||'?', emoji:'🍽️', price:0};
+    let sharedLabel = '';
+    if (o.type === 'shared') {
+      if (o.sharedWith === 'ALL') sharedLabel = 'Todos los comensales';
+      else if (Array.isArray(o.sharedWith)) {
+        const names = o.sharedWith.map(pid => s.participants.find(p => p.id===pid)?.name || pid);
+        sharedLabel = names.join(', ');
+      } else sharedLabel = o.personName;
+    }
+    ol.innerHTML += `<div class="order-item">
+      <div class="order-emoji">${mi.emoji}</div>
+      <div style="flex:1">
+        <div class="order-name">${mi.name} × ${o.qty}</div>
+        <div class="order-person">${o.type==='shared'?'Compartido: '+sharedLabel:'Solo: '+o.personName}</div>
+      </div>
+      <span class="badge ${o.type==='shared'?'badge-amber':'badge-blue'}" style="margin-right:12px">${o.type==='shared'?'Compartido':'Individual'}</span>
+      <div class="order-price">${fmtR(mi.price * o.qty)}</div>
+    </div>`;
+  });
+  // Totals
+  const grand = sessionTotal(s, DB.menu);
+  const paid = (s.payments||[]).filter(p => p.status==='paid').reduce((t,p) => t+p.amount, 0);
+  document.getElementById('detail-grand-total').textContent = fmtR(grand);
+  document.getElementById('detail-total-meta').textContent = 'IVA ' + s.tax + '% · Propina ' + s.tip + '%';
+  document.getElementById('detail-paid').textContent = fmtR(paid);
+  document.getElementById('detail-due').textContent = fmtR(grand - paid);
+  // Per person
+  const pbEl = document.getElementById('pb-persons');
+  pbEl.innerHTML = '';
+  (s.participants||[]).forEach((p, i) => {
+    const {total} = calcPersonTotal(s, p.id, DB.menu);
+    const hasPaid = (s.payments||[]).some(pay => pay.personId === p.id && pay.status === 'paid');
+    const isProxy = p.isProxy ? `<span class="badge badge-cyan" style="margin-left:4px">Sin app</span>` : '';
+    const manager = p.isProxy ? s.participants.find(m => m.id === p.managedBy) : null;
+    pbEl.innerHTML += `<div class="pb-person">
+      <div class="pb-av" style="background:${AV_COLORS[i%8]}">${initials(p.name)}</div>
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:4px">
+          <div class="pb-name">${p.name}</div>${isProxy}
+        </div>
+        ${manager ? `<div style="font-size:11px;color:var(--cyan)">Gestionado por ${manager.name}</div>` : ''}
+        <span class="badge ${hasPaid?'badge-green':'badge-amber'}" style="font-size:10px;display:inline-flex;margin-top:2px">${hasPaid?'✓ Pagado':'Pendiente'}</span>
+      </div>
+      <div class="pb-amount" style="${hasPaid?'color:var(--green)':''}">${fmtR(total)}</div>
+      <button onclick="openRemoveGuestModal('${p.id}')" title="Quitar de la mesa"
+        style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1;flex-shrink:0"
+        onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">×</button>
+    </div>`;
+  });
+  // Proxy guests button
+  if (!document.getElementById('proxy-btn-inline')) {
+    const box = document.getElementById('detail-breakdown');
+    const btn = document.createElement('button');
+    btn.id = 'proxy-btn-inline';
+    btn.className = 'btn btn-ghost btn-full btn-sm';
+    btn.style.marginTop = '10px';
+    btn.textContent = '+ Agregar comensal sin app';
+    btn.onclick = openProxyModal;
+    box.appendChild(btn);
+  }
+}
+
+// ─────────────────────────────────
+// SESSIONS
+// ─────────────────────────────────
+function openNewTableModal() {
+  DB = loadRestDB();
+  const sel = document.getElementById('nt-table-select');
+  sel.innerHTML = '';
+  const usedIds = new Set(DB.sessions.filter(s => s.status==='occupied'||s.status==='paying').map(s => s.tableId));
+  DB.tables.forEach(t => {
+    if (!usedIds.has(t.id)) {
+      const op = document.createElement('option'); op.value = t.id; op.textContent = 'Mesa #' + t.number; sel.appendChild(op);
+    }
+  });
+  if (!sel.options.length) { toast('⚠️ Todas las mesas están ocupadas'); return; }
+  openModal('modal-new-table');
+}
+
+function createSession() {
+  DB = loadRestDB();
+  const tableId = parseInt(document.getElementById('nt-table-select').value);
+  const table = DB.tables.find(t => t.id === tableId);
+  if (!table) { toast('⚠️ Mesa no válida'); return; }
+  const s = {
+    id: DB.nextSessionId++, tableId: table.id, tableNumber: table.number,
+    status: 'occupied', splitMode: document.getElementById('nt-split').value,
+    tax: DB.restaurant.tax, tip: DB.restaurant.tip,
+    joinCode: genCode(), openedAt: new Date().toISOString(),
+    participants: [], orders: [], payments: [],
+  };
+  DB.sessions.push(s); table.status = 'occupied'; save();
+  closeModal('modal-new-table');
+  toast('✅ Mesa #' + table.number + ' abierta · Código: ' + s.joinCode);
+  openTableDetail(s.id);
+}
+
+function closeTableSession() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession);
+  if (!s) return;
+  if (!confirm('¿Cerrar Mesa #' + s.tableNumber + '?')) return;
+  s.status = 'closed'; s.closedAt = new Date().toISOString();
+  s.total = sessionTotal(s, DB.menu);
+  DB.history.push({...s});
+  DB.sessions = DB.sessions.filter(se => se.id !== s.id);
+  const t = DB.tables.find(tb => tb.id === s.tableId); if (t) t.status = 'free';
+  save();
+  toast('✅ Mesa #' + s.tableNumber + ' cerrada · Total: ' + fmtR(s.total));
+  showPanel('mesas'); renderDashboard();
+}
+
+// ─────────────────────────────────
+// ORDERS — with share selector
+// ─────────────────────────────────
+function openAddOrderModal() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  const sel = document.getElementById('ao-item'); sel.innerHTML = '';
+  DB.menu.filter(m => m.available).forEach(m => {
+    const op = document.createElement('option'); op.value = m.id;
+    op.textContent = m.emoji + ' ' + m.name + ' — ' + fmtR(m.price); sel.appendChild(op);
+  });
+  const ps = document.getElementById('ao-person'); ps.innerHTML = '';
+  s.participants.forEach(p => {
+    const op = document.createElement('option'); op.value = p.id; op.textContent = p.name; ps.appendChild(op);
+  });
+  if (!s.participants.length) { ps.innerHTML = '<option value="0">Sin participantes</option>'; }
+  // Reset shared
+  shareAllSelected = false;
+  selectedSharePersons = new Set();
+  document.getElementById('ao-type').value = 'individual';
+  toggleShareUI();
+  openModal('modal-add-order');
+}
+
+function toggleShareUI() {
+  DB = loadRestDB();
+  const type = document.getElementById('ao-type').value;
+  document.getElementById('ao-individual-section').style.display = type === 'individual' ? 'block' : 'none';
+  document.getElementById('ao-shared-section').style.display = type === 'shared' ? 'block' : 'none';
+  if (type === 'shared') buildSharePersonList();
+}
+
+function buildSharePersonList() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  const list = document.getElementById('ao-share-person-list');
+  list.innerHTML = '';
+  shareAllSelected = false;
+  document.getElementById('ao-share-all-btn').className = 'share-all-btn';
+  s.participants.forEach(p => {
+    const div = document.createElement('div');
+    const isSel = selectedSharePersons.has(p.id);
+    div.className = 'share-person-item' + (isSel ? ' selected' : '');
+    div.innerHTML = `<div class="av-dot" style="background:${AV_COLORS[s.participants.indexOf(p)%8]}">${initials(p.name)}</div>
+      <span style="font-size:13px;font-weight:500;color:var(--text)">${p.name}${p.isProxy?' 🔹':''}</span>
+      <div class="share-checkbox"></div>`;
+    div.onclick = () => {
+      if (selectedSharePersons.has(p.id)) selectedSharePersons.delete(p.id);
+      else selectedSharePersons.add(p.id);
+      shareAllSelected = false;
+      document.getElementById('ao-share-all-btn').className = 'share-all-btn';
+      buildSharePersonList();
+    };
+    list.appendChild(div);
+  });
+  updateShareCount();
+}
+
+function toggleShareAll() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  shareAllSelected = !shareAllSelected;
+  if (shareAllSelected) {
+    selectedSharePersons = new Set(s.participants.map(p => p.id));
+    document.getElementById('ao-share-all-btn').className = 'share-all-btn selected';
+  } else {
+    selectedSharePersons = new Set();
+    document.getElementById('ao-share-all-btn').className = 'share-all-btn';
+  }
+  buildSharePersonList();
+}
+
+function updateShareCount() {
+  const el = document.getElementById('ao-share-count');
+  if (shareAllSelected) { el.textContent = '✅ Compartido entre todos los comensales'; }
+  else if (selectedSharePersons.size === 0) { el.textContent = 'Ninguna persona seleccionada'; }
+  else { el.textContent = `${selectedSharePersons.size} persona(s) seleccionada(s) — cada una paga ÷${selectedSharePersons.size}`; }
+}
+
+function addOrder() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  const menuId = parseInt(document.getElementById('ao-item').value);
+  const qty = parseInt(document.getElementById('ao-qty').value) || 1;
+  const type = document.getElementById('ao-type').value;
+  const personId = document.getElementById('ao-person').value;
+  const person = s.participants.find(p => p.id === personId);
+  let sharedWith = null, personName = person ? person.name : 'Staff';
+  if (type === 'shared') {
+    if (shareAllSelected) { sharedWith = 'ALL'; personName = 'Todos los comensales'; }
+    else if (selectedSharePersons.size > 0) {
+      sharedWith = Array.from(selectedSharePersons);
+      personName = sharedWith.map(pid => s.participants.find(p=>p.id===pid)?.name).filter(Boolean).join(', ');
+    } else { toast('⚠️ Selecciona al menos una persona para compartir'); return; }
+  }
+  s.orders.push({ id: Date.now(), menuItemId: menuId, qty, type, personId, personName, sharedWith });
+  save(); closeModal('modal-add-order');
+  renderDetailPanel(s); renderDashboard();
+  const mi = DB.menu.find(m => m.id === menuId);
+  toast('✅ ' + (mi?.emoji||'') + ' ' + (mi?.name||'') + ' agregado · ' + (type==='shared'?'Compartido':'Individual'));
+}
+
+// ─────────────────────────────────
+// PROXY GUEST (sin app / sin teléfono)
+// ─────────────────────────────────
+function openProxyModal() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  document.getElementById('proxy-name').value = '';
+  const sel = document.getElementById('proxy-manager'); sel.innerHTML = '';
+  s.participants.filter(p => !p.isProxy).forEach(p => {
+    const op = document.createElement('option'); op.value = p.id; op.textContent = p.name; sel.appendChild(op);
+  });
+  openModal('modal-add-proxy');
+}
+
+function addProxyGuest() {
+  const name = document.getElementById('proxy-name').value.trim();
+  if (!name) { toast('⚠️ Ingresa el nombre'); return; }
+  const managerId = document.getElementById('proxy-manager').value;
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  const newPerson = { id: 'proxy_' + Date.now(), name, isProxy: true, managedBy: managerId };
+  s.participants.push(newPerson);
+  save(); closeModal('modal-add-proxy');
+  renderDetailPanel(s);
+  toast('✅ ' + name + ' agregado — sus pagos están a cargo del gestor');
+}
+
+// ─────────────────────────────────
+// MENU
+// ─────────────────────────────────
+function renderMenu() {
+  DB = loadRestDB();
+  const cats = ['Todos', ...new Set(DB.menu.map(m => m.cat))];
+  const cr = document.getElementById('menu-cats'); cr.innerHTML = '';
+  cats.forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'cat-pill' + (c === currentMenuCat ? ' active' : '');
+    btn.textContent = c; btn.onclick = () => { currentMenuCat = c; renderMenu(); };
+    cr.appendChild(btn);
+  });
+  const filtered = currentMenuCat === 'Todos' ? DB.menu : DB.menu.filter(m => m.cat === currentMenuCat);
+  const grid = document.getElementById('menu-grid'); grid.innerHTML = '';
+  filtered.forEach(m => {
+    const div = document.createElement('div'); div.className = 'menu-item';
+    div.innerHTML = `<div class="menu-item-img">${m.emoji}<span class="badge ${m.available?'badge-green':'badge-red'}" style="position:absolute;top:8px;right:8px">${m.available?'Disponible':'Agotado'}</span></div>
+      <div class="menu-item-body">
+        <div class="menu-item-name">${m.name}</div>
+        <div class="menu-item-cat">${m.cat}</div>
+        <div class="menu-item-footer">
+          <div class="menu-item-price">${fmtR(m.price)}</div>
+          <div class="toggle ${m.available?'on':''}" onclick="toggleMenuItem(${m.id})"></div>
+        </div>
+      </div>`;
+    grid.appendChild(div);
+  });
+  const add = document.createElement('div'); add.className = 'menu-item';
+  add.style = 'border:2px dashed var(--border2);background:transparent;cursor:pointer';
+  add.onclick = openAddMenuModal;
+  add.innerHTML = '<div class="menu-item-img" style="font-size:28px;color:var(--text3)">+</div><div class="menu-item-body"><div class="menu-item-name" style="color:var(--text3)">Agregar plato</div></div>';
+  grid.appendChild(add);
+}
+function toggleMenuItem(id) {
+  DB = loadRestDB();
+  const m = DB.menu.find(m => m.id === id); if (!m) return;
+  m.available = !m.available; save(); renderMenu();
+  toast((m.available?'✅':'⚠️')+' '+m.name+' '+(m.available?'disponible':'marcado como agotado'));
+}
+function openAddMenuModal() { openModal('modal-add-menu'); }
+function addMenuItem() {
+  DB = loadRestDB();
+  const name = document.getElementById('am-name').value.trim();
+  const emoji = document.getElementById('am-emoji').value.trim() || '🍽️';
+  const price = parseFloat(document.getElementById('am-price').value);
+  const cat = document.getElementById('am-cat').value;
+  if (!name || !price) { toast('⚠️ Completa nombre y precio'); return; }
+  DB.menu.push({id: DB.nextMenuId++, name, emoji, price, cat, available: true});
+  save(); closeModal('modal-add-menu'); renderMenu();
+  toast('✅ ' + emoji + ' ' + name + ' agregado al menú');
+}
+
+// ─────────────────────────────────
+// HISTORY
+// ─────────────────────────────────
+function renderHistory() {
+  DB = loadRestDB();
+  const total = DB.history.reduce((s,h) => s+(h.total||0), 0);
+  const avg = DB.history.length ? total/DB.history.length : 0;
+  document.getElementById('hist-total').textContent = fmtR(total);
+  document.getElementById('hist-count').textContent = DB.history.length;
+  document.getElementById('hist-avg').textContent = fmtR(avg);
+  const list = document.getElementById('hist-list');
+  if (!DB.history.length) { list.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>Sin historial</p></div>'; return; }
+  list.innerHTML = '';
+  [...DB.history].reverse().forEach(h => {
+    list.innerHTML += `<div class="order-item">
+      <div style="width:40px;height:40px;background:var(--green-bg);border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--green);flex-shrink:0">#${h.tableNumber}</div>
+      <div><div class="order-name">Mesa #${h.tableNumber} · ${h.participants?.length||0} personas</div><div class="order-person">${new Date(h.closedAt||h.openedAt).toLocaleString()}</div></div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700">${fmtR(h.total||0)}</div>
+        <span class="badge badge-green" style="margin-top:3px">✓ Cerrada</span>
+      </div>
+    </div>`;
+  });
+}
+
+// ─────────────────────────────────
+// CONFIG
+// ─────────────────────────────────
+function saveConfig() {
+  DB = loadRestDB();
+  DB.restaurant.name = document.getElementById('cfg-name').value.trim() || DB.restaurant.name;
+  DB.restaurant.address = document.getElementById('cfg-address').value.trim();
+  DB.restaurant.tax = parseFloat(document.getElementById('cfg-tax').value) || 0;
+  DB.restaurant.tip = parseFloat(document.getElementById('cfg-tip').value) || 0;
+  DB.restaurant.numTables = parseInt(document.getElementById('cfg-tables').value) || DB.restaurant.numTables;
+  save(); initApp(); toast('✅ Configuración guardada');
+}
+
+// ─────────────────────────────────
+// QR
+// ─────────────────────────────────
+function openQRModal() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  document.getElementById('qr-modal-title').textContent = 'QR Mesa #' + s.tableNumber;
+  document.getElementById('qr-join-code').textContent = s.joinCode;
+  document.getElementById('qr-join-url').textContent = 'splitgrid.app/join/' + s.joinCode;
+  openModal('modal-qr');
+}
+function copyJoinCode() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession);
+  if (s) { navigator.clipboard?.writeText(s.joinCode).catch(()=>{}); toast('📋 Código copiado: '+s.joinCode); }
+}
+
+// ─────────────────────────────────
+// TABS
+// ─────────────────────────────────
+function switchTab(btn, tabId) {
+  btn.closest('.tabs-row').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['tab-activas','tab-todas'].forEach(id => document.getElementById(id).style.display = id===tabId?'block':'none');
+  if (tabId === 'tab-todas') renderAllTables();
+}
+
+// ─────────────────────────────────
+// STAR RATING (detail)
+// ─────────────────────────────────
+function rateStar(n) { document.querySelectorAll('.star').forEach((s,i)=>s.classList.toggle('lit',i<n)); }
+
+// ─────────────────────────────────
+// REMOVE PARTICIPANT
+// ─────────────────────────────────
+function openRemoveGuestModal(personId) {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  const p = s.participants.find(pp => pp.id === personId); if (!p) return;
+  const {total} = calcPersonTotal(s, personId, DB.menu);
+  const hasPaid = (s.payments||[]).some(pay => pay.personId === personId && pay.status === 'paid');
+  const pending = hasPaid ? 0 : total;
+  personToRemove = personId;
+  redistribSelected = new Set();
+  const info = document.getElementById('remove-guest-info');
+  const redistSection = document.getElementById('remove-redistrib-section');
+  info.innerHTML = `Vas a quitar a <strong>${p.name}</strong> de la mesa.`;
+  if (pending > 0) {
+    info.innerHTML += ` Saldo pendiente: <strong>${fmtR(pending)}</strong>`;
+    redistSection.style.display = 'block';
+    document.getElementById('redistrib-equal').checked = true;
+    buildRedistribList(s, personId);
+    toggleRedistribUI();
+  } else {
+    redistSection.style.display = 'none';
+  }
+  openModal('modal-remove-guest');
+}
+
+function toggleRedistribUI() {
+  const isCustom = document.getElementById('redistrib-custom')?.checked;
+  const list = document.getElementById('redistrib-person-list');
+  list.style.display = isCustom ? 'flex' : 'none';
+}
+
+function buildRedistribList(s, excludeId) {
+  const proxyIds = (s.participants||[]).filter(p => p.managedBy === excludeId).map(p => p.id);
+  const excludeAll = [excludeId, ...proxyIds];
+  const eligible = (s.participants||[]).filter(p => !excludeAll.includes(p.id) && !p.isProxy);
+  const list = document.getElementById('redistrib-person-list');
+  list.innerHTML = '';
+  eligible.forEach((p, i) => {
+    const isSel = redistribSelected.has(p.id);
+    const div = document.createElement('div');
+    div.className = 'share-person-item' + (isSel ? ' selected' : '');
+    div.innerHTML = `<div class="av-dot" style="background:${AV_COLORS[i%8]}">${initials(p.name)}</div>
+      <span style="font-size:13px;font-weight:500">${p.name}</span>
+      <div class="share-checkbox"></div>`;
+    div.onclick = () => {
+      if (redistribSelected.has(p.id)) redistribSelected.delete(p.id);
+      else redistribSelected.add(p.id);
+      buildRedistribList(s, excludeId);
+    };
+    list.appendChild(div);
+  });
+}
+
+function confirmRemoveGuest() {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  const personId = personToRemove;
+  const p = s.participants.find(pp => pp.id === personId); if (!p) return;
+  const proxyIds = (s.participants||[]).filter(pp => pp.managedBy === personId).map(pp => pp.id);
+  const allRemoving = [personId, ...proxyIds];
+  // Calculate individual-order debt for all being removed
+  let totalIndividualDebt = 0;
+  allRemoving.forEach(rid => {
+    const hasPaid = (s.payments||[]).some(pay => pay.personId === rid && pay.status === 'paid');
+    if (!hasPaid) {
+      const indivSub = (s.orders||[]).reduce((sum, o) => {
+        if (o.type === 'individual' && o.personId === rid) {
+          const mi = DB.menu.find(m => m.id === o.menuItemId);
+          return sum + (mi ? mi.price * o.qty : 0);
+        }
+        return sum;
+      }, 0);
+      totalIndividualDebt += indivSub * (1 + s.tax/100 + s.tip/100);
+    }
+  });
+  if (totalIndividualDebt > 0) {
+    const isCustom = document.getElementById('redistrib-custom')?.checked;
+    let recipientIds;
+    if (isCustom) {
+      recipientIds = Array.from(redistribSelected);
+      if (!recipientIds.length) { toast('⚠️ Selecciona al menos un comensal'); return; }
+    } else {
+      recipientIds = (s.participants||[]).filter(pp => !allRemoving.includes(pp.id) && !pp.isProxy).map(pp => pp.id);
+    }
+    if (!recipientIds.length) { toast('⚠️ No hay comensales para redistribuir el saldo'); return; }
+    const amtPerPerson = totalIndividualDebt / recipientIds.length;
+    s.transferredDebts = s.transferredDebts || [];
+    recipientIds.forEach(rid => s.transferredDebts.push({
+      id: Date.now() + Math.random(), fromName: p.name, toPersonId: rid, amount: amtPerPerson
+    }));
+  }
+  // Remove persons
+  s.participants = s.participants.filter(pp => !allRemoving.includes(pp.id));
+  // Remove their individual orders
+  s.orders = (s.orders||[]).filter(o => !(o.type==='individual' && allRemoving.includes(o.personId)));
+  // Remove them from explicit sharedWith arrays (divisor recalculates automatically)
+  s.orders.forEach(o => {
+    if (o.type==='shared' && Array.isArray(o.sharedWith)) {
+      o.sharedWith = o.sharedWith.filter(id => !allRemoving.includes(id));
+      if (!o.sharedWith.length) o.sharedWith = 'ALL';
+    }
+  });
+  save();
+  closeModal('modal-remove-guest');
+  DB = loadRestDB();
+  const updated = DB.sessions.find(se => se.id === currentDetailSession);
+  if (updated) renderDetailPanel(updated);
+  renderDashboard();
+  toast('✅ ' + p.name + ' quitado' + (totalIndividualDebt > 0 ? ' · Saldo redistribuido: ' + fmtR(totalIndividualDebt) : ''));
+}
+
+// ─────────────────────────────────
+// SIDEBAR TOGGLE
+// ─────────────────────────────────
+function toggleSidebar() {
+  const sb = document.getElementById('main-sidebar');
+  sb.classList.toggle('collapsed');
+  const btn = sb.querySelector('.sidebar-toggle');
+  btn.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+  btn.title = sb.classList.contains('collapsed') ? 'Expandir menú' : 'Colapsar menú';
+}
+function openMobileSidebar() {
+  document.getElementById('main-sidebar').classList.add('mobile-open');
+  document.getElementById('sidebar-backdrop').classList.add('open');
+}
+function closeMobileSidebar() {
+  document.getElementById('main-sidebar').classList.remove('mobile-open');
+  document.getElementById('sidebar-backdrop').classList.remove('open');
+}
+
+initApp();
+</script>
+</body>
+</html>
