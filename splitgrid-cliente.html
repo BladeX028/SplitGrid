@@ -352,7 +352,9 @@
 
 <div class="toast" id="toast"><span id="toast-msg">✅ Listo</span></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="js/db.js"></script>
 <script src="js/shared.js"></script>
 <script>
 // ─────────────────────────────────
@@ -368,6 +370,32 @@ if (!CL.user) { window.location.href = 'index.html'; }
 
 function saveC() { saveClientState(CL); }
 function fmtC(n) { return fmt(n, CL.country); }
+
+// ── Helpers para modo cross-device (Supabase) ──
+// Devuelve la sesión activa: primero desde Supabase (CL._liveSession), luego localStorage
+function _sess() {
+  if (CL._liveSession) return CL._liveSession;
+  if (!CL.session) return null;
+  return loadRestDB()?.sessions?.find(se => se.id === CL.session.sessionId) || null;
+}
+// Devuelve el menú: primero del cache del cliente (cross-device), luego del restaurante local
+function _menu() {
+  const local = loadRestDB()?.menu;
+  return (local?.length ? local : null) || CL.menu || [];
+}
+// Persiste cambios en la sesión: en Supabase (cross-device) o localStorage (mismo dispositivo)
+async function _syncSession(updatedSession) {
+  CL._liveSession = updatedSession;
+  saveC();
+  if (CL.session?.sessionId) {
+    await sbUpdateSessionFields(String(CL.session.sessionId), {
+      participants:     updatedSession.participants,
+      orders:           updatedSession.orders,
+      payments:         updatedSession.payments,
+      transferredDebts: updatedSession.transferredDebts,
+    }).catch(() => {});
+  }
+}
 
 // ─────────────────────────────────
 // LOGOUT
@@ -399,8 +427,30 @@ function launchApp() {
   document.getElementById('perfil-country-display').textContent = c.flag + ' ' + c.name + ' (' + c.currency + ') — detectado automáticamente';
   if (document.getElementById('join-name')) document.getElementById('join-name').value = u.name;
   renderMesa(); renderPago(); renderHistory();
-  // Real-time polling
-  setInterval(() => { renderMesa(); renderPago(); }, 5000);
+
+  // Si ya tiene sesión activa, reconectar a Supabase Realtime y cargar datos frescos
+  if (CL.session?.sessionId) {
+    sbGetSessionById(String(CL.session.sessionId)).then(s => {
+      if (s) {
+        CL._liveSession = s;
+        CL.menu = CL.menu || [];
+        saveC();
+        renderMesa(); renderPago();
+        sbSubscribeSession(String(s.id), payload => {
+          if (payload.new) {
+            CL._liveSession = _rowToSession(payload.new);
+            saveC();
+            renderMesa(); renderPago();
+          }
+        });
+      }
+    }).catch(() => {});
+  }
+
+  // Polling local de respaldo (para mismo-dispositivo sin Realtime)
+  setInterval(() => {
+    if (!CL._liveSession) { renderMesa(); renderPago(); }
+  }, 5000);
 }
 
 // ─────────────────────────────────
@@ -423,27 +473,30 @@ function showPanel(id) {
 // ─────────────────────────────────
 // JOIN SESSION
 // ─────────────────────────────────
-function joinSession() {
+async function joinSession() {
   const code = document.getElementById('join-code').value.trim().toUpperCase();
   const name = document.getElementById('join-name').value.trim() || CL.user?.name || 'Invitado';
   if (code.length !== 6) { toast('⚠️ El código debe tener 6 caracteres'); return; }
+
+  // ── Intentar Supabase primero (cross-device) ──
+  const sbSess = await sbGetSessionByCode(code).catch(() => null);
+  if (sbSess) {
+    await _joinViaSB(sbSess, code, name);
+    return;
+  }
+
+  // ── Fallback: mismo dispositivo (localStorage) ──
   const restDB = loadRestDB();
   if (!restDB) { toast('⚠️ No hay restaurante activo. Abre el panel de restaurante primero.'); return; }
   const s = restDB.sessions.find(se => (se.status==='occupied'||se.status==='paying') && se.joinCode === code);
   if (!s) { toast('⚠️ Código inválido o sesión cerrada'); return; }
-
-  // Participant memory: reuse existing identity if the user was in this session before
   const pmap = JSON.parse(localStorage.getItem('sg_pmap') || '{}');
   const savedId = pmap[code];
   const savedParticipant = savedId ? (s.participants||[]).find(p => p.id === savedId) : null;
-
-  let myId;
-  let rejoining = false;
+  let myId; let rejoining = false;
   if (savedParticipant) {
-    myId = savedId;
-    rejoining = true;
-    savedParticipant.name = name;
-    saveRestDB(restDB);
+    myId = savedId; rejoining = true;
+    savedParticipant.name = name; saveRestDB(restDB);
   } else {
     myId = CL.user?.id || 'guest_' + Date.now();
     if (!(s.participants||[]).find(p => p.id === myId)) {
@@ -454,7 +507,6 @@ function joinSession() {
     pmap[code] = myId;
     localStorage.setItem('sg_pmap', JSON.stringify(pmap));
   }
-
   CL.session = {
     sessionId: s.id, joinCode: code, tableNumber: s.tableNumber,
     restaurantName: restDB.restaurant.name, myName: name, myId,
@@ -467,6 +519,47 @@ function joinSession() {
   toast(rejoining
     ? '✅ Reingresaste a Mesa #' + s.tableNumber + ' como ' + name
     : '✅ Te uniste a Mesa #' + s.tableNumber + ' · ' + restDB.restaurant.name);
+  showPanel('mesa'); renderMesa();
+}
+
+async function _joinViaSB(s, code, name) {
+  const myId = CL.user?.id || 'guest_' + Date.now();
+  const existing = (s.participants||[]).find(p => p.id === myId);
+  const rejoining = !!existing;
+  if (existing) { existing.name = name; }
+  else { s.participants.push({ id: myId, name }); }
+  await sbUpdateSessionFields(String(s.id), { participants: s.participants }).catch(() => {});
+
+  // Cargar datos del restaurante (menú, nombre, país)
+  const restData = await sbLoadRestaurant(s.restaurantId || '').catch(() => null);
+  const restaurantName = restData?.restaurant?.name || 'Restaurante';
+  const restaurantCountry = restData?.restaurant?.country || CL.country;
+
+  CL.session = {
+    sessionId: s.id, joinCode: code, tableNumber: s.tableNumber,
+    restaurantName, myName: name, myId,
+    restaurantId: s.restaurantId,
+    tax: s.tax, tip: s.tip,
+  };
+  CL.country = restaurantCountry;
+  CL.menu = restData?.menu || [];
+  CL._liveSession = s;
+  saveC();
+
+  // Suscribir Realtime para recibir actualizaciones del restaurante
+  sbSubscribeSession(String(s.id), payload => {
+    if (payload.new) {
+      CL._liveSession = _rowToSession(payload.new);
+      saveC();
+      renderMesa(); renderPago();
+    }
+  });
+
+  document.getElementById('sidebar-sub').textContent = 'Mesa #' + s.tableNumber + ' · Activa';
+  document.getElementById('live-indicator').style.display = 'flex';
+  toast(rejoining
+    ? '✅ Reingresaste a Mesa #' + s.tableNumber
+    : '✅ Te uniste a Mesa #' + s.tableNumber + ' · ' + restaurantName);
   showPanel('mesa'); renderMesa();
 }
 
@@ -537,14 +630,14 @@ function closeQRScanner() {
 // ─────────────────────────────────
 function leaveTable() {
   if (!CL.session) { showPanel('join'); return; }
-  const restDB = loadRestDB();
-  const s = restDB?.sessions?.find(se => se.id === CL.session.sessionId);
+  const s = _sess();
   if (!s) { leaveSession(); return; }
+  const menu = _menu();
   const myId = CL.session.myId;
   const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
-  const {total} = calcPersonTotal(s, myId, restDB.menu);
+  const {total} = calcPersonTotal(s, myId, menu);
   let proxyTotal = 0;
-  managedProxyIds.forEach(pid => { proxyTotal += calcPersonTotal(s, pid, restDB.menu).total; });
+  managedProxyIds.forEach(pid => { proxyTotal += calcPersonTotal(s, pid, menu).total; });
   const grandTotal = total + proxyTotal;
   const hasPaid = (s.payments||[]).some(pay => pay.personId === myId && (pay.status === 'paid' || pay.status === 'pending_cash'));
   if (grandTotal > 0 && !hasPaid) {
@@ -589,16 +682,20 @@ function openProxyModal() {
   openModal('modal-proxy');
 }
 
-function addClientProxy() {
+async function addClientProxy() {
   const name = document.getElementById('client-proxy-name').value.trim();
   if (!name) { toast('⚠️ Ingresa el nombre'); return; }
-  const restDB = loadRestDB();
-  if (!restDB || !CL.session) return;
-  const s = restDB.sessions.find(se => se.id === CL.session.sessionId);
-  if (!s) return;
+  if (!CL.session) return;
+  const s = _sess(); if (!s) return;
   const newPerson = { id: 'proxy_' + Date.now(), name, isProxy: true, managedBy: CL.session.myId };
   s.participants.push(newPerson);
-  saveRestDB(restDB);
+  // Sync to Supabase (cross-device) and localStorage (same-device)
+  await _syncSession(s);
+  const restDB = loadRestDB();
+  if (restDB) {
+    const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
+    if (ls) { ls.participants = s.participants; saveRestDB(restDB); }
+  }
   closeModal('modal-proxy');
   renderMesa();
   toast('✅ ' + name + ' agregado — sus pagos los gestionas tú');
@@ -612,9 +709,10 @@ function renderMesa() {
   const actSes = document.getElementById('mesa-active');
   if (!CL.session) { noSes.style.display='block'; actSes.style.display='none'; return; }
   noSes.style.display = 'none'; actSes.style.display = 'block';
-  const restDB = loadRestDB();
-  const s = restDB?.sessions?.find(se => se.id === CL.session.sessionId);
+  const s = _sess();
+  const menu = _menu();
   if (!s) { CL.session = null; saveC(); renderMesa(); return; }
+  const restDB = loadRestDB(); // puede ser null en cross-device, usar solo para restaurante local
 
   // Detect cash payments confirmed by restaurant → add to history and notify client
   const myId_early = CL.session.myId;
@@ -677,7 +775,7 @@ function renderMesa() {
   myList.innerHTML = '';
   if (!myOrders.length) { myList.innerHTML = '<div class="empty" style="padding:20px"><p style="font-size:13px">Sin pedidos propios</p></div>'; }
   myOrders.forEach(o => {
-    const mi = restDB.menu.find(m => m.id === o.menuItemId) || {emoji:'🍽️',name:'?',price:0};
+    const mi = menu.find(m => m.id === o.menuItemId) || {emoji:'🍽️',name:'?',price:0};
     const ownerName = o.personId === myId ? 'Para mí' : (s.participants.find(p=>p.id===o.personId)?.name||'?') + ' (gestionado por mí)';
     myList.innerHTML += `<div class="order-item mine">
       <div class="order-emoji">${mi.emoji}</div>
@@ -691,7 +789,7 @@ function renderMesa() {
   tableList.innerHTML = '';
   if (!tableOrders.length) { tableList.innerHTML = '<div class="empty" style="padding:20px"><p style="font-size:13px">Sin más pedidos</p></div>'; }
   tableOrders.forEach(o => {
-    const mi = restDB.menu.find(m => m.id === o.menuItemId) || {emoji:'🍽️',name:'?',price:0};
+    const mi = menu.find(m => m.id === o.menuItemId) || {emoji:'🍽️',name:'?',price:0};
     const isShared = o.type === 'shared';
     let sharedLabel = '';
     if (isShared) {
@@ -708,13 +806,13 @@ function renderMesa() {
   });
 
   // Real-time tip sync
-  const currentRestTip = restDB.restaurant.tip || 0;
+  const currentRestTip = s.tip || restDB?.restaurant?.tip || 0;
   if (!includeTip) selectedTipPct = currentRestTip || 10;
 
   // Totals: self + all managed proxies
-  const {sub, total} = calcPersonTotal(s, myId, restDB.menu); // total = sub + transferred (no tip)
+  const {sub, total} = calcPersonTotal(s, myId, menu); // total = sub + transferred (no tip)
   let proxyTotalAll = 0;
-  managedProxyIds.forEach(pid => { proxyTotalAll += calcPersonTotal(s, pid, restDB.menu).total; });
+  managedProxyIds.forEach(pid => { proxyTotalAll += calcPersonTotal(s, pid, menu).total; });
   const totalOwed = total + proxyTotalAll; // everything I'm responsible for
 
   // Confirmed paid (baseAmount or full amount for legacy payments)
@@ -776,10 +874,10 @@ function renderMesa() {
   rows.innerHTML = '';
   // My own individual orders
   const myOwnOrders = (s.orders||[]).filter(o => o.type==='individual' && o.personId===myId);
-  myOwnOrders.forEach(o => { const mi = restDB.menu.find(m => m.id===o.menuItemId); if(mi) rows.innerHTML+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
+  myOwnOrders.forEach(o => { const mi = menu.find(m => m.id===o.menuItemId); if(mi) rows.innerHTML+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
   const sharedOrders = (s.orders||[]).filter(o => o.type==='shared');
   sharedOrders.forEach(o => {
-    const mi = restDB.menu.find(m => m.id===o.menuItemId); if(!mi) return;
+    const mi = menu.find(m => m.id===o.menuItemId); if(!mi) return;
     const divisor = o.sharedWith === 'ALL' ? (s.participants?.length||1) : (Array.isArray(o.sharedWith) ? o.sharedWith.length : 1);
     const inList = o.sharedWith === 'ALL' || (Array.isArray(o.sharedWith) && o.sharedWith.includes(myId));
     if (inList) rows.innerHTML += `<div class="pb-row"><span class="pb-label">${mi.name} (÷${divisor})</span><span class="pb-val">${fmtC(mi.price*o.qty/divisor)}</span></div>`;
@@ -798,13 +896,13 @@ function renderMesa() {
   if (managedProxyIds.length > 0) {
     managedProxyIds.forEach(pid => {
       const proxy = (s.participants||[]).find(p => p.id === pid); if (!proxy) return;
-      const {total: pTotal, sub: pSub} = calcPersonTotal(s, pid, restDB.menu);
+      const {total: pTotal, sub: pSub} = calcPersonTotal(s, pid, menu);
       const pOrders = (s.orders||[]).filter(o => o.type==='individual' && o.personId===pid);
       let html = `<div style="margin-top:10px;padding:10px;background:rgba(6,182,212,.07);border:1px solid rgba(6,182,212,.2);border-radius:var(--r)">
         <div style="font-size:11px;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">${proxy.name} 🔹 — a tu cargo</div>`;
-      pOrders.forEach(o => { const mi = restDB.menu.find(m => m.id===o.menuItemId); if(mi) html+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
+      pOrders.forEach(o => { const mi = menu.find(m => m.id===o.menuItemId); if(mi) html+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
       sharedOrders.forEach(o => {
-        const mi = restDB.menu.find(m => m.id===o.menuItemId); if(!mi) return;
+        const mi = menu.find(m => m.id===o.menuItemId); if(!mi) return;
         const divisor = o.sharedWith==='ALL'?(s.participants?.length||1):(Array.isArray(o.sharedWith)?o.sharedWith.length:1);
         const inList = o.sharedWith==='ALL'||(Array.isArray(o.sharedWith)&&o.sharedWith.includes(pid));
         if(inList) html+=`<div class="pb-row"><span class="pb-label">${mi.name} (÷${divisor})</span><span class="pb-val">${fmtC(mi.price*o.qty/divisor)}</span></div>`;
@@ -827,8 +925,9 @@ function renderPago() {
   const actSes = document.getElementById('pago-active');
   if (!CL.session) { noSes.style.display='block'; actSes.style.display='none'; return; }
   noSes.style.display='none'; actSes.style.display='block';
+  const s = _sess(); if (!s) return;
+  const menu = _menu();
   const restDB = loadRestDB();
-  const s = restDB?.sessions?.find(se => se.id === CL.session.sessionId); if (!s) return;
   const c = COUNTRIES[CL.country] || COUNTRIES.CO;
   document.getElementById('pago-country-badge').textContent = c.flag + ' ' + c.currency;
   // Methods
@@ -841,15 +940,15 @@ function renderPago() {
     ml.appendChild(div);
   });
   // Real-time tip sync
-  const currentRestTipPago = restDB.restaurant.tip || 0;
+  const currentRestTipPago = s.tip || restDB?.restaurant?.tip || 0;
   if (!includeTip) selectedTipPct = currentRestTipPago || 10;
 
   // Totals
   const myId = CL.session.myId;
   const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
-  const {sub, total} = calcPersonTotal(s, myId, restDB.menu); // total = sub + transferred, no tip
+  const {sub, total} = calcPersonTotal(s, myId, menu); // total = sub + transferred, no tip
   let proxyTotalAll = 0;
-  managedProxyIds.forEach(pid => { proxyTotalAll += calcPersonTotal(s, pid, restDB.menu).total; });
+  managedProxyIds.forEach(pid => { proxyTotalAll += calcPersonTotal(s, pid, menu).total; });
   const totalOwedPago = total + proxyTotalAll;
 
   // Already confirmed-paid
@@ -930,9 +1029,11 @@ function renderPago() {
 // ─────────────────────────────────
 // PROCESS PAYMENT
 // ─────────────────────────────────
-function processPayment() {
-  const restDB = loadRestDB(); if (!restDB || !CL.session) return;
-  const s = restDB.sessions.find(se => se.id === CL.session.sessionId); if (!s) return;
+async function processPayment() {
+  if (!CL.session) return;
+  const s = _sess(); if (!s) return;
+  const menu = _menu();
+  const restDB = loadRestDB();
   const myId = CL.session.myId;
 
   // Block if there's already a pending cash payment
@@ -940,9 +1041,9 @@ function processPayment() {
   if (hasCashPending) { toast('⚠️ Tienes un pago en efectivo esperando confirmación del restaurante'); return; }
 
   const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
-  const {sub, total} = calcPersonTotal(s, myId, restDB.menu); // total = sub + transferred, no tip
+  const {sub, total} = calcPersonTotal(s, myId, menu); // total = sub + transferred, no tip
   let proxyBase = 0;
-  managedProxyIds.forEach(pid => { proxyBase += calcPersonTotal(s, pid, restDB.menu).total; });
+  managedProxyIds.forEach(pid => { proxyBase += calcPersonTotal(s, pid, menu).total; });
   const totalOwed = total + proxyBase;
 
   // Already confirmed-paid
@@ -976,7 +1077,12 @@ function processPayment() {
     tipIncluded: includeTip,
     tipPct: includeTip ? selectedTipPct : 0
   });
-  saveRestDB(restDB);
+  // Sync a Supabase (cross-device) y también a localStorage si hay restaurante local
+  await _syncSession(s);
+  if (restDB) {
+    const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
+    if (ls) { ls.payments = s.payments; saveRestDB(restDB); }
+  }
 
   if (isCash) {
     // Cash: stay on mesa panel, show pending notice (restDB already saved above)
@@ -997,7 +1103,7 @@ function processPayment() {
     <div class="rr"><span class="rr-k">Método</span><span class="rr-v">${method}</span></div>
     <div class="rr"><span class="rr-k">Monto pagado</span><span class="rr-v" style="color:var(--green)">${fmtC(grandMine)}</span></div>
     ${includeTip && tipAmount>0 ? `<div class="rr"><span class="rr-k">Propina incluida (${selectedTipPct}%)</span><span class="rr-v">${fmtC(tipAmount)}</span></div>` : ''}
-    ${!includeTip && (restDB.restaurant.tip||0)>0 ? `<div class="rr"><span class="rr-k">Propina</span><span class="rr-v" style="color:var(--text3)">No incluida</span></div>` : ''}
+    ${!includeTip && (s.tip || restDB?.restaurant?.tip||0)>0 ? `<div class="rr"><span class="rr-k">Propina</span><span class="rr-v" style="color:var(--text3)">No incluida</span></div>` : ''}
     ${proxyBase>0&&paidSoFar===0?`<div class="rr"><span class="rr-k">Comensales a cargo</span><span class="rr-v">${fmtC(proxyBase)}</span></div>`:''}
     ${paidSoFar>0?`<div class="rr"><span class="rr-k">Pago previo ya registrado</span><span class="rr-v" style="color:var(--green)">-${fmtC(paidSoFar)}</span></div>`:''}
     <div class="rr"><span class="rr-k">Mesa</span><span class="rr-v">#${s.tableNumber} · ${s.participants?.length||0} personas</span></div>
@@ -1007,7 +1113,8 @@ function processPayment() {
 }
 
 function leaveSession() {
-  CL.session = null; saveC();
+  CL.session = null; CL._liveSession = null; CL.menu = []; saveC();
+  sbUnsubscribeAll();
   document.getElementById('sidebar-sub').textContent = 'Sin mesa';
   document.getElementById('live-indicator').style.display = 'none';
   document.getElementById('topbar-pay-btn').style.display = 'none';
