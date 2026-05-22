@@ -1,4 +1,4 @@
-# SplitGrid — Sistema Distribuido de División de Gastos
+# SplitGrid — Sistema Distribuido de División de Gastos -UC
 **Colombia · Brasil · Francia · Italia · Rusia**
 *Universidad Central | Ingeniería de Sistemas | Sistemas Distribuidos | Versión 2.0*
 
