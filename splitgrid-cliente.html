@@ -9,6 +9,48 @@
 </head>
 <body>
 
+<!-- ═══ AUTH CLIENTE ═══ -->
+<div id="cl-auth" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--bg)">
+  <div class="auth-card" style="max-width:400px;width:calc(100% - 40px);margin:20px auto">
+    <div class="auth-logo">Split<span>Grid</span></div>
+    <div class="auth-sub">Únete a una mesa y divide la cuenta</div>
+
+    <div id="cl-auth-error" class="error-msg" style="display:none"></div>
+
+    <div class="form-group">
+      <label>¿Cómo te llamamos?</label>
+      <input type="text" id="cl-guest-name" placeholder="Tu nombre"
+        onkeydown="if(event.key==='Enter')clGuestLogin()">
+    </div>
+    <button class="auth-big-btn" style="background:var(--blue);color:white;margin-top:4px" onclick="clGuestLogin()">
+      Entrar como invitado →
+    </button>
+
+    <div class="auth-divider">
+      <div class="auth-divider-line"></div>
+      <div class="auth-divider-text">o inicia sesión con cuenta</div>
+      <div class="auth-divider-line"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="cl-email" placeholder="tu@email.com">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="cl-pass" placeholder="••••••••"
+        onkeydown="if(event.key==='Enter')clEmailLogin()">
+    </div>
+    <button class="auth-big-btn auth-btn-ghost" onclick="clEmailLogin()">
+      Iniciar sesión
+    </button>
+
+    <div style="text-align:center;margin-top:20px">
+      <a href="index.html" style="font-size:13px;color:var(--text3);text-decoration:none">← Volver al inicio</a>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ APP ═══ -->
 <div id="app" style="display:none">
 
@@ -405,8 +447,43 @@ let selectedMethod = 0;
 let includeTip = false;
 let selectedTipPct = 10; // starts at restaurant's default, updated on render
 
-// Auth guard
-if (!CL.user) { window.location.href = 'index.html'; }
+// Auth guard — mostrar pantalla inline en vez de redirigir
+function _showClAuth() {
+  const el = document.getElementById('cl-auth');
+  el.style.display = 'flex';
+  // Pre-llenar nombre si hay un ?code= en la URL (el usuario vendrá del QR)
+  const _uc = new URLSearchParams(window.location.search).get('code');
+  if (_uc) {
+    const hint = document.getElementById('cl-guest-name');
+    if (hint) hint.placeholder = 'Tu nombre (código: ' + _uc.toUpperCase() + ')';
+  }
+}
+function _hideClAuth() {
+  document.getElementById('cl-auth').style.display = 'none';
+}
+function clGuestLogin() {
+  const name = document.getElementById('cl-guest-name').value.trim();
+  if (!name) { const e=document.getElementById('cl-auth-error'); e.textContent='Ingresa tu nombre para continuar'; e.style.display='block'; return; }
+  CL.user = { id:'guest_'+Date.now(), name, email:null, isGuest:true };
+  CL.country = detectCountry();
+  saveC();
+  _hideClAuth();
+  launchApp();
+}
+function clEmailLogin() {
+  const email = document.getElementById('cl-email').value.trim();
+  const pass  = document.getElementById('cl-pass').value;
+  const e = document.getElementById('cl-auth-error');
+  if (!email) { e.textContent='Ingresa tu email'; e.style.display='block'; return; }
+  if (pass.length < 6) { e.textContent='Contraseña muy corta (mín. 6 caracteres)'; e.style.display='block'; return; }
+  e.style.display = 'none';
+  CL.user = { id:'user_'+Date.now(), name:email.split('@')[0], email, isGuest:false };
+  CL.country = detectCountry();
+  saveC();
+  _hideClAuth();
+  launchApp();
+}
+if (!CL.user) { _showClAuth(); }
 
 function saveC() { saveClientState(CL); }
 function fmtC(n) { return fmt(n, CL.country); }
@@ -442,8 +519,11 @@ async function _syncSession(updatedSession) {
 // ─────────────────────────────────
 function doLogout() {
   if (!confirm('¿Cerrar sesión?')) return;
-  CL.user = null; CL.session = null; saveC();
-  window.location.href = 'index.html';
+  sbUnsubscribeAll();
+  CL = { user: null, country: detectCountry(), session: null, payments: [], menu: [] };
+  saveC();
+  document.getElementById('app').style.display = 'none';
+  _showClAuth();
 }
 
 // ─────────────────────────────────
@@ -1326,7 +1406,7 @@ function closeMobileSidebar() {
   document.getElementById('sidebar-backdrop').classList.remove('open');
 }
 
-launchApp();
+if (CL.user) launchApp();
 </script>
 </body>
 </html>
