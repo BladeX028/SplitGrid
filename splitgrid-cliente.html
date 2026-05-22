@@ -352,6 +352,46 @@
 
 <div class="toast" id="toast"><span id="toast-msg">✅ Listo</span></div>
 
+<!-- ═══ MODAL: dLocal Go — Retorno de pago ═══ -->
+<div class="modal-overlay" id="modal-dlocal-return">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">🌐 dLocal Go</div>
+      <button class="btn btn-ghost btn-sm" onclick="cancelDlocal()">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center;padding:24px 20px">
+      <div style="font-size:48px;margin-bottom:12px">🌐</div>
+      <div id="dlocal-amount-label" style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:800;margin-bottom:8px"></div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:20px">
+        Completaste el pago en la pasarela dLocal Go.<br>
+        Si el pago fue exitoso, confirma aquí para notificar al restaurante.
+      </p>
+      <div style="background:var(--bg4);border-radius:var(--r);padding:10px 12px;font-size:12px;color:var(--text3)">
+        🔒 El restaurante verificará el cobro en su panel de dLocal antes de confirmar tu cuenta.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="cancelDlocal()">No pagué / Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="confirmDlocalPayment()">✅ Sí, pagué →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Instrucciones de pago ═══ -->
+<div class="modal-overlay" id="modal-pay-inst">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="pay-inst-title">Realizar transferencia</div>
+      <button class="btn btn-ghost btn-sm" onclick="cancelPayInstructions()">✕</button>
+    </div>
+    <div class="modal-body" id="pay-inst-body" style="padding-top:8px"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="cancelPayInstructions()">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitPaymentInstructions()">✅ Ya transferí →</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="js/db.js"></script>
@@ -427,6 +467,14 @@ function launchApp() {
   document.getElementById('perfil-country-display').textContent = c.flag + ' ' + c.name + ' (' + c.currency + ') — detectado automáticamente';
   if (document.getElementById('join-name')) document.getElementById('join-name').value = u.name;
   renderMesa(); renderPago(); renderHistory();
+
+  // Si la URL tiene ?code=XXXXXX (desde QR del restaurante), pre-llenar y navegar a "Unirse"
+  const _urlCode = new URLSearchParams(window.location.search).get('code');
+  if (_urlCode && _urlCode.length === 6 && !CL.session?.sessionId) {
+    document.getElementById('join-code').value = _urlCode.toUpperCase();
+    showPanel('join');
+    toast('📷 Código leído del QR: ' + _urlCode.toUpperCase());
+  }
 
   // Si ya tiene sesión activa, reconectar a Supabase Realtime y cargar datos frescos
   if (CL.session?.sessionId) {
@@ -543,6 +591,8 @@ async function _joinViaSB(s, code, name) {
   };
   CL.country = restaurantCountry;
   CL.menu = restData?.menu || [];
+  CL.paymentAccounts = restData?.restaurant?.paymentAccounts || {};
+  CL.dlocalUrl = restData?.restaurant?.dlocalUrl || '';
   CL._liveSession = s;
   saveC();
 
@@ -931,6 +981,7 @@ function renderPago() {
   const c = COUNTRIES[CL.country] || COUNTRIES.CO;
   document.getElementById('pago-country-badge').textContent = c.flag + ' ' + c.currency;
   // Methods
+  const DLOCAL_IDX = 99;
   const ml = document.getElementById('payment-methods-list'); ml.innerHTML = '';
   c.methods.forEach((m, i) => {
     const div = document.createElement('div');
@@ -939,6 +990,15 @@ function renderPago() {
     div.onclick = () => { selectedMethod = i; renderPago(); };
     ml.appendChild(div);
   });
+  // dLocal Go — aparece solo si el restaurante lo configuró
+  const dlUrl = CL.dlocalUrl || loadRestDB()?.restaurant?.dlocalUrl || '';
+  if (dlUrl) {
+    const dl = document.createElement('div');
+    dl.className = 'method-card' + (selectedMethod===DLOCAL_IDX?' selected':'');
+    dl.innerHTML = `<div class="m-icon" style="background:linear-gradient(135deg,rgba(0,102,255,.25),rgba(0,200,150,.2))">🌐</div><div><div class="m-name">dLocal Go</div><div class="m-sub">Tarjetas · PSE · Métodos locales</div></div><div class="m-radio"></div>`;
+    dl.onclick = () => { selectedMethod = DLOCAL_IDX; renderPago(); };
+    ml.appendChild(dl);
+  }
   // Real-time tip sync
   const currentRestTipPago = s.tip || restDB?.restaurant?.tip || 0;
   if (!includeTip) selectedTipPct = currentRestTipPago || 10;
@@ -1029,87 +1089,173 @@ function renderPago() {
 // ─────────────────────────────────
 // PROCESS PAYMENT
 // ─────────────────────────────────
+
+// Datos del pago pendiente mientras se muestran instrucciones
+let _pendingPay = null;
+
 async function processPayment() {
   if (!CL.session) return;
   const s = _sess(); if (!s) return;
   const menu = _menu();
-  const restDB = loadRestDB();
   const myId = CL.session.myId;
 
-  // Block if there's already a pending cash payment
-  const hasCashPending = (s.payments||[]).some(pay => pay.personId === myId && pay.status === 'pending_cash');
-  if (hasCashPending) { toast('⚠️ Tienes un pago en efectivo esperando confirmación del restaurante'); return; }
+  // Bloquear si ya hay un pago pendiente de confirmación
+  const hasPending = (s.payments||[]).some(pay => pay.personId === myId && pay.status === 'pending_cash');
+  if (hasPending) { toast('⚠️ Ya tienes un pago esperando confirmación del restaurante'); return; }
 
   const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
-  const {sub, total} = calcPersonTotal(s, myId, menu); // total = sub + transferred, no tip
+  const {total} = calcPersonTotal(s, myId, menu);
   let proxyBase = 0;
   managedProxyIds.forEach(pid => { proxyBase += calcPersonTotal(s, pid, menu).total; });
   const totalOwed = total + proxyBase;
 
-  // Already confirmed-paid
   const paidSoFar = (s.payments||[])
     .filter(pay => pay.personId === myId && pay.status === 'paid')
     .reduce((t, pay) => t + (pay.baseAmount !== undefined ? pay.baseAmount : pay.amount), 0);
 
-  // Tip ONLY on the remaining unpaid balance
-  const baseAmount = Math.max(0, totalOwed - paidSoFar); // pending subtotal
+  const baseAmount = Math.max(0, totalOwed - paidSoFar);
   if (baseAmount <= 0) { toast('⚠️ No tienes saldo pendiente'); return; }
 
   const tipAmount = includeTip ? baseAmount * selectedTipPct / 100 : 0;
   const grandMine = baseAmount + tipAmount;
 
+  const DLOCAL_IDX = 99;
   const c = COUNTRIES[CL.country] || COUNTRIES.CO;
-  const method = c.methods[selectedMethod]?.name || '?';
-  const isCash = method === 'Efectivo' || method === 'Boleto';
+  const isDlocal = selectedMethod === DLOCAL_IDX;
+  const methodObj = isDlocal
+    ? { name: 'dLocal Go', icon: '🌐', sub: 'Pasarela de pagos' }
+    : (c.methods[selectedMethod] || { name: '?', icon: '💳', sub: '' });
+  const isCash = methodObj.name === 'Efectivo' || methodObj.name === 'Boleto';
   const ref = 'SGR-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*999999)).padStart(6,'0');
-  const paymentStatus = isCash ? 'pending_cash' : 'paid';
 
+  // Guardar datos del pago para usarlos al confirmar
+  _pendingPay = { s, baseAmount, tipAmount, grandMine, methodObj, ref, proxyBase, paidSoFar };
+
+  if (isDlocal) {
+    _openDlocalPayment(grandMine);
+    return;
+  }
+
+  if (isCash) {
+    await _registerPayment(_pendingPay, 'pending_cash');
+    toast('💵 Pago en efectivo registrado · El restaurante confirmará');
+    showPanel('mesa');
+    return;
+  }
+
+  // Método de transferencia: mostrar instrucciones
+  _showPaymentInstructions(methodObj, baseAmount, grandMine, tipAmount);
+}
+
+function _showPaymentInstructions(methodObj, baseAmount, grandMine, tipAmount) {
+  const restDB = loadRestDB();
+  // Obtener cuentas: primero del cliente (cross-device), luego del restaurante local
+  const accounts = CL.paymentAccounts || restDB?.restaurant?.paymentAccounts || {};
+  const account = accounts[methodObj.name] || '';
+
+  document.getElementById('pay-inst-title').textContent = 'Pagar con ' + methodObj.name;
+
+  let steps = '';
+  if (account) {
+    steps = `
+      <ol style="font-size:13px;color:var(--text2);line-height:1.8;padding-left:18px;margin:12px 0 0">
+        <li>Abre tu app de <strong>${methodObj.name}</strong></li>
+        <li>Envía <strong>${fmtC(grandMine)}</strong> al número / cuenta:<br>
+            <span style="font-family:monospace;font-size:15px;font-weight:700;letter-spacing:1px">${account}</span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:6px;padding:2px 8px"
+              onclick="navigator.clipboard?.writeText('${account.replace(/'/g,"\\'")}');toast('📋 Copiado')">📋</button>
+        </li>
+        <li>Vuelve aquí y pulsa <strong>"Ya transferí →"</strong></li>
+      </ol>`;
+  } else {
+    steps = `
+      <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--amber);margin-top:12px">
+        ⚠️ El restaurante no ha configurado los datos de <strong>${methodObj.name}</strong>.<br>
+        Consulta con el cajero o elige otro método.
+      </div>`;
+  }
+
+  document.getElementById('pay-inst-body').innerHTML = `
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:44px;margin-bottom:6px">${methodObj.icon}</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:4px">Total a transferir</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:34px;font-weight:800;letter-spacing:-1px">${fmtC(grandMine)}</div>
+      ${tipAmount > 0 ? `<div style="font-size:12px;color:var(--text3)">Incluye propina de ${fmtC(tipAmount)}</div>` : ''}
+    </div>
+    ${steps}
+    <div style="background:var(--bg4);border-radius:var(--r);padding:10px 12px;font-size:12px;color:var(--text3);margin-top:14px">
+      🔒 Al confirmar, el restaurante verificará tu pago antes de marcar la cuenta como pagada.
+    </div>`;
+
+  openModal('modal-pay-inst');
+}
+
+function cancelPayInstructions() {
+  _pendingPay = null;
+  closeModal('modal-pay-inst');
+}
+
+// ─── dLocal Go ───────────────────
+function _openDlocalPayment(grandMine) {
+  const dlUrl = CL.dlocalUrl || loadRestDB()?.restaurant?.dlocalUrl || '';
+  if (!dlUrl) {
+    toast('⚠️ El restaurante no ha configurado dLocal Go');
+    _pendingPay = null;
+    return;
+  }
+  // Mostrar el monto en el modal de retorno
+  document.getElementById('dlocal-amount-label').textContent = fmtC(grandMine);
+  // Abrir dLocal en nueva pestaña
+  window.open(dlUrl, '_blank', 'noopener');
+  // Mostrar modal de confirmación de retorno
+  openModal('modal-dlocal-return');
+}
+
+function cancelDlocal() {
+  _pendingPay = null;
+  closeModal('modal-dlocal-return');
+}
+
+async function confirmDlocalPayment() {
+  if (!_pendingPay) { closeModal('modal-dlocal-return'); return; }
+  closeModal('modal-dlocal-return');
+  await _registerPayment(_pendingPay, 'pending_cash');
+  toast('🌐 Pago con dLocal registrado · El restaurante confirmará');
+  _pendingPay = null;
+  showPanel('mesa');
+}
+
+async function submitPaymentInstructions() {
+  if (!_pendingPay) return;
+  closeModal('modal-pay-inst');
+  await _registerPayment(_pendingPay, 'pending_cash');
+  const { methodObj, grandMine } = _pendingPay;
+  _pendingPay = null;
+  toast(`${methodObj.icon} Pago registrado · Esperando confirmación del restaurante`);
+  showPanel('mesa');
+}
+
+async function _registerPayment({ s, baseAmount, tipAmount, grandMine, methodObj, ref, proxyBase, paidSoFar }, status) {
+  const myId = CL.session.myId;
+  const restDB = loadRestDB();
   s.payments = s.payments || [];
   s.payments.push({
-    personId: myId,
-    amount: grandMine,
-    baseAmount: baseAmount,
-    tipAmount: tipAmount,
-    method,
-    status: paymentStatus,
+    personId:    myId,
+    amount:      grandMine,
+    baseAmount:  baseAmount,
+    tipAmount:   tipAmount,
+    method:      methodObj.name,
+    status,
     ref,
-    paidAt: new Date().toISOString(),
+    paidAt:      new Date().toISOString(),
     tipIncluded: includeTip,
-    tipPct: includeTip ? selectedTipPct : 0
+    tipPct:      includeTip ? selectedTipPct : 0,
   });
-  // Sync a Supabase (cross-device) y también a localStorage si hay restaurante local
   await _syncSession(s);
   if (restDB) {
     const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
     if (ls) { ls.payments = s.payments; saveRestDB(restDB); }
   }
-
-  if (isCash) {
-    // Cash: stay on mesa panel, show pending notice (restDB already saved above)
-    toast('💵 Pago en efectivo registrado · El restaurante confirmará tu pago');
-    showPanel('mesa');
-    return;
-  }
-
-  // Non-cash: add to client history and show success screen
-  const histEntry = {ref, amount: grandMine, method, restaurantName: CL.session.restaurantName, tableNumber: CL.session.tableNumber, paidAt: new Date().toISOString(), country: CL.country};
-  CL.payments = CL.payments || [];
-  CL.payments.push(histEntry);
-  saveC();
-
-  document.getElementById('exito-sub').textContent = CL.session.restaurantName + ' · Mesa #' + s.tableNumber;
-  document.getElementById('exito-receipt').innerHTML = `
-    <div class="section-title" style="margin-bottom:14px">Recibo de pago</div>
-    <div class="rr"><span class="rr-k">Método</span><span class="rr-v">${method}</span></div>
-    <div class="rr"><span class="rr-k">Monto pagado</span><span class="rr-v" style="color:var(--green)">${fmtC(grandMine)}</span></div>
-    ${includeTip && tipAmount>0 ? `<div class="rr"><span class="rr-k">Propina incluida (${selectedTipPct}%)</span><span class="rr-v">${fmtC(tipAmount)}</span></div>` : ''}
-    ${!includeTip && (s.tip || restDB?.restaurant?.tip||0)>0 ? `<div class="rr"><span class="rr-k">Propina</span><span class="rr-v" style="color:var(--text3)">No incluida</span></div>` : ''}
-    ${proxyBase>0&&paidSoFar===0?`<div class="rr"><span class="rr-k">Comensales a cargo</span><span class="rr-v">${fmtC(proxyBase)}</span></div>`:''}
-    ${paidSoFar>0?`<div class="rr"><span class="rr-k">Pago previo ya registrado</span><span class="rr-v" style="color:var(--green)">-${fmtC(paidSoFar)}</span></div>`:''}
-    <div class="rr"><span class="rr-k">Mesa</span><span class="rr-v">#${s.tableNumber} · ${s.participants?.length||0} personas</span></div>
-    <div class="rr"><span class="rr-k">Restaurante</span><span class="rr-v">${CL.session.restaurantName}</span></div>
-    <div class="rr"><span class="rr-k">Referencia</span><span class="rr-v" style="font-family:monospace;font-size:11px;color:var(--text3)">${ref}</span></div>`;
-  showPanel('exito');
 }
 
 function leaveSession() {

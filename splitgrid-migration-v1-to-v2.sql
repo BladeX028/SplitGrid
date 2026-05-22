@@ -403,6 +403,12 @@ CREATE TABLE IF NOT EXISTS sg_history (
   closed_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
+-- Agregar columnas nuevas (si no existen)
+ALTER TABLE sg_restaurants
+  ADD COLUMN IF NOT EXISTS payment_accounts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE sg_restaurants
+  ADD COLUMN IF NOT EXISTS dlocal_url TEXT NOT NULL DEFAULT '';
+
 ALTER TABLE sg_restaurants DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sg_sessions    DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sg_history     DISABLE ROW LEVEL SECURITY;
