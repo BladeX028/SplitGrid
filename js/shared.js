@@ -7,11 +7,12 @@
 const COUNTRIES = {
   CO:{name:'Colombia',    flag:'🇨🇴',currency:'COP',sym:'$',    tax:19, tip:10, locale:'es-CO',
       methods:[
-        {icon:'💙',name:'Nequi',      sub:'Pago instantáneo',     bg:'linear-gradient(135deg,rgba(59,110,250,.25),rgba(6,182,212,.2))'},
-        {icon:'💚',name:'Daviplata',  sub:'Pago móvil',           bg:'linear-gradient(135deg,rgba(34,197,94,.2),rgba(5,150,105,.15))'},
-        {icon:'🏦',name:'PSE',        sub:'Débito bancario',      bg:'linear-gradient(135deg,rgba(245,158,11,.2),rgba(217,119,6,.15))'},
-        {icon:'💳',name:'Tarjeta',    sub:'Visa, Mastercard',     bg:'var(--bg4)'},
-        {icon:'💵',name:'Efectivo',     sub:'Punto físico',         bg:'var(--bg4)'},
+        {icon:'💙',name:'Nequi',              sub:'Código QR / número',    bg:'linear-gradient(135deg,rgba(59,110,250,.25),rgba(6,182,212,.2))'},
+        {icon:'💚',name:'Daviplata',          sub:'Pago móvil',             bg:'linear-gradient(135deg,rgba(34,197,94,.2),rgba(5,150,105,.15))'},
+        {icon:'🔐',name:'Llave Bancolombia',  sub:'App Bancolombia',        bg:'linear-gradient(135deg,rgba(245,158,11,.2),rgba(217,119,6,.15))'},
+        {icon:'🏦',name:'PSE',                sub:'Débito bancario',        bg:'linear-gradient(135deg,rgba(100,116,139,.2),rgba(71,85,105,.15))'},
+        {icon:'💳',name:'Tarjeta',            sub:'Débito / Crédito',       bg:'var(--bg4)'},
+        {icon:'💵',name:'Efectivo',           sub:'Pago en caja',           bg:'var(--bg4)'},
       ]},
   BR:{name:'Brasil',      flag:'🇧🇷',currency:'BRL',sym:'R$',   tax:0,  tip:10, locale:'pt-BR',
       methods:[

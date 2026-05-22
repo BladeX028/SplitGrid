@@ -66,10 +66,10 @@
         <div class="stat-card"><div class="stat-label">Clientes ahora</div><div class="stat-value" id="dash-clients">0</div><div class="stat-badge badge-purple">En mesa</div></div>
         <div class="stat-card"><div class="stat-label">Clientes hoy</div><div class="stat-value" id="dash-clients-today">0</div><div class="stat-badge badge-cyan">En el día</div></div>
       </div>
-      <!-- Pagos en efectivo pendientes -->
+      <!-- Pagos pendientes de confirmación -->
       <div id="cash-pending-section" style="display:none;margin-bottom:20px">
         <div class="section-header">
-          <div class="section-title">💵 Pagos en efectivo pendientes</div>
+          <div class="section-title">⏳ Pagos pendientes de confirmación</div>
           <span class="badge badge-amber" id="cash-pending-count">0</span>
         </div>
         <div class="orders-list" id="cash-pending-list"></div>
@@ -180,6 +180,31 @@
           <div class="form-group"><label>IVA / Impuesto (%) — incluido en los precios</label><input type="number" id="cfg-tax" min="0" max="50" step="0.5" placeholder="Ya incluido en precios"></div>
           <div class="form-group"><label>Propina sugerida (%)</label><input type="number" id="cfg-tip" min="0" max="30"></div>
         </div>
+      </div>
+
+      <div class="form-section" style="margin-top:16px">
+        <div class="form-title">💳 Cuentas de cobro</div>
+        <p style="font-size:13px;color:var(--text3);margin-bottom:16px">Los clientes ven estos datos al pagar. Deja en blanco los métodos que no ofreces.</p>
+        <div id="cfg-payment-accounts"></div>
+      </div>
+
+      <div class="form-section" style="margin-top:16px">
+        <div class="form-title">🌐 Pasarela de pagos — dLocal Go</div>
+        <p style="font-size:13px;color:var(--text3);margin-bottom:14px">
+          Acepta tarjetas débito/crédito y métodos locales mediante <strong>dlocal.com/go</strong>.
+          Crea tu cuenta gratuita, genera un <em>link de cobro</em> con monto variable y pégalo aquí.
+        </p>
+        <div class="form-group">
+          <label>Link de cobro dLocal Go</label>
+          <input id="cfg-dlocal-url" type="url" placeholder="https://go.dlocal.com/l/tu-link">
+        </div>
+        <div style="background:var(--bg4);border-radius:var(--r);padding:11px 13px;font-size:12px;color:var(--text3);line-height:1.6">
+          💡 <strong>Cómo obtener tu link:</strong>
+          dlocal.com/go → Iniciar sesión → <em>Cobrar</em> → <em>Link de pago</em> → activa "Monto variable" → copia el link.
+        </div>
+      </div>
+
+      <div style="padding:0 0 16px">
         <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
       </div>
     </div>
@@ -218,14 +243,15 @@
     <div class="modal-head"><div class="modal-title" id="qr-modal-title">QR Mesa</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-qr')">✕</button></div>
     <div class="modal-body" style="text-align:center">
       <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Los clientes escanean este código o ingresan el código manualmente.</p>
-      <div style="background:white;border-radius:var(--r2);padding:24px;display:inline-flex;margin-bottom:16px">
-        <div class="qr-pattern"></div>
+      <div style="background:white;border-radius:var(--r2);padding:20px;display:inline-flex;margin-bottom:16px">
+        <div id="qr-canvas"></div>
       </div>
       <div style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:800;letter-spacing:4px;color:var(--text);margin-bottom:4px" id="qr-join-code">------</div>
       <div style="font-size:12px;color:var(--text3)" id="qr-join-url">splitgrid.app/join/------</div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-qr')">Cerrar</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="downloadQR()">⬇️ Descargar</button>
       <button class="btn btn-primary" style="flex:1" onclick="copyJoinCode()">📋 Copiar código</button>
     </div>
   </div>
@@ -354,6 +380,7 @@
 <div class="toast" id="toast"><span id="toast-msg">✅ Listo</span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="js/db.js"></script>
 <script src="js/shared.js"></script>
 <script>
@@ -400,6 +427,9 @@ function initApp() {
   document.getElementById('cfg-tables').value = DB.restaurant.numTables;
   document.getElementById('cfg-tax').value = DB.restaurant.tax;
   document.getElementById('cfg-tip').value = DB.restaurant.tip;
+  renderPaymentAccountInputs();
+  if (document.getElementById('cfg-dlocal-url'))
+    document.getElementById('cfg-dlocal-url').value = DB.restaurant.dlocalUrl || '';
   renderDashboard();
   renderMenu();
   renderHistory();
@@ -456,7 +486,7 @@ function renderDashboard() {
   document.getElementById('dash-clients-today').textContent = clientsToday;
   document.getElementById('active-tables-badge').textContent = active.length;
 
-  // Cash pending payments
+  // Pending payments (all methods, not just cash)
   const pendingCash = active.flatMap(s =>
     (s.payments || []).filter(p => p.status === 'pending_cash').map(p => ({...p, session: s}))
   );
@@ -468,11 +498,13 @@ function renderDashboard() {
     cashList.innerHTML = '';
     pendingCash.forEach(p => {
       const person = (p.session.participants||[]).find(pp => pp.id === p.personId);
+      const c = COUNTRIES[DB.restaurant.country] || COUNTRIES.CO;
+      const methodObj = c.methods.find(m => m.name === p.method) || {icon:'💳', name: p.method || '?'};
       cashList.innerHTML += `<div class="order-item" style="border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)">
-        <div style="width:42px;height:42px;background:var(--amber-bg);border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">💵</div>
+        <div style="width:42px;height:42px;background:var(--amber-bg);border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${methodObj.icon}</div>
         <div style="flex:1">
           <div class="order-name">${person?.name || 'Cliente'} — Mesa #${p.session.tableNumber}</div>
-          <div class="order-person">Efectivo · ${new Date(p.paidAt).toLocaleTimeString()}</div>
+          <div class="order-person">${methodObj.name} · ${new Date(p.paidAt).toLocaleTimeString()}</div>
         </div>
         <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;margin-right:12px">${fmtR(p.amount)}</div>
         <button class="btn btn-success btn-sm" onclick="confirmCashPayment(${p.session.id},'${p.ref}')">✓ Confirmar</button>
@@ -1000,13 +1032,43 @@ function renderHistory() {
 // ─────────────────────────────────
 // CONFIG
 // ─────────────────────────────────
+function renderPaymentAccountInputs() {
+  const c = COUNTRIES[DB.restaurant.country] || COUNTRIES.CO;
+  const container = document.getElementById('cfg-payment-accounts');
+  if (!container) return;
+  const accounts = DB.restaurant.paymentAccounts || {};
+  const transferMethods = c.methods.filter(m => m.name !== 'Efectivo' && m.name !== 'Boleto' && m.name !== 'Cartão');
+  container.innerHTML = '';
+  transferMethods.forEach(m => {
+    const safeName = m.name.replace(/\s+/g, '-').replace(/[^\w-]/g, '');
+    container.innerHTML += `
+      <div class="form-group">
+        <label>${m.icon} ${m.name}</label>
+        <input id="cfg-pa-${safeName}" placeholder="Número de celular, cuenta o referencia"
+               value="${(accounts[m.name] || '').replace(/"/g, '&quot;')}">
+      </div>`;
+  });
+}
+
 function saveConfig() {
   DB = loadRestDB();
-  DB.restaurant.name = document.getElementById('cfg-name').value.trim() || DB.restaurant.name;
+  DB.restaurant.name    = document.getElementById('cfg-name').value.trim() || DB.restaurant.name;
   DB.restaurant.address = document.getElementById('cfg-address').value.trim();
-  DB.restaurant.tax = parseFloat(document.getElementById('cfg-tax').value) || 0;
-  DB.restaurant.tip = parseFloat(document.getElementById('cfg-tip').value) || 0;
+  DB.restaurant.tax     = parseFloat(document.getElementById('cfg-tax').value) || 0;
+  DB.restaurant.tip     = parseFloat(document.getElementById('cfg-tip').value) || 0;
   const newNumTables = parseInt(document.getElementById('cfg-tables').value) || DB.restaurant.numTables;
+
+  // Save payment accounts
+  const c = COUNTRIES[DB.restaurant.country] || COUNTRIES.CO;
+  const accounts = {};
+  c.methods.filter(m => m.name !== 'Efectivo' && m.name !== 'Boleto' && m.name !== 'Cartão').forEach(m => {
+    const safeName = m.name.replace(/\s+/g, '-').replace(/[^\w-]/g, '');
+    const val = document.getElementById('cfg-pa-' + safeName)?.value.trim();
+    if (val) accounts[m.name] = val;
+  });
+  DB.restaurant.paymentAccounts = accounts;
+  const dlocalUrl = document.getElementById('cfg-dlocal-url')?.value.trim();
+  DB.restaurant.dlocalUrl = dlocalUrl || '';
 
   // Add new tables if count increased
   const currentMax = DB.tables.length > 0 ? Math.max(...DB.tables.map(t => t.number)) : 0;
@@ -1056,18 +1118,56 @@ async function hydrateFromSupabase() {
 // ─────────────────────────────────
 // QR
 // ─────────────────────────────────
+let _qrInstance = null;
+
 function openQRModal() {
   DB = loadRestDB();
   const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
+  const code = s.joinCode;
+  const url  = window.location.origin + window.location.pathname.replace('splitgrid-restaurante.html','splitgrid-cliente.html') + '?code=' + code;
+
   document.getElementById('qr-modal-title').textContent = 'QR Mesa #' + s.tableNumber;
-  document.getElementById('qr-join-code').textContent = s.joinCode;
-  document.getElementById('qr-join-url').textContent = 'splitgrid.app/join/' + s.joinCode;
+  document.getElementById('qr-join-code').textContent = code;
+  document.getElementById('qr-join-url').textContent   = url;
+
+  // Limpiar QR anterior y generar uno nuevo
+  const container = document.getElementById('qr-canvas');
+  container.innerHTML = '';
+  _qrInstance = new QRCode(container, {
+    text:          url,
+    width:         200,
+    height:        200,
+    colorDark:     '#000000',
+    colorLight:    '#ffffff',
+    correctLevel:  QRCode.CorrectLevel.H,
+  });
+
   openModal('modal-qr');
 }
+
 function copyJoinCode() {
   DB = loadRestDB();
   const s = DB.sessions.find(se => se.id === currentDetailSession);
   if (s) { navigator.clipboard?.writeText(s.joinCode).catch(()=>{}); toast('📋 Código copiado: '+s.joinCode); }
+}
+
+function downloadQR() {
+  const canvas = document.querySelector('#qr-canvas canvas');
+  const img    = document.querySelector('#qr-canvas img');
+  const code   = document.getElementById('qr-join-code').textContent || 'qr';
+  if (canvas) {
+    const a = document.createElement('a');
+    a.href     = canvas.toDataURL('image/png');
+    a.download = 'splitgrid-' + code + '.png';
+    a.click();
+  } else if (img) {
+    const a = document.createElement('a');
+    a.href     = img.src;
+    a.download = 'splitgrid-' + code + '.png';
+    a.click();
+  } else {
+    toast('⚠️ QR aún cargando, intenta de nuevo');
+  }
 }
 
 // ─────────────────────────────────

@@ -15,9 +15,11 @@ CREATE TABLE IF NOT EXISTS sg_restaurants (
   address         TEXT          NOT NULL DEFAULT '',
   menu            JSONB         NOT NULL DEFAULT '[]'::jsonb,
   tables_data     JSONB         NOT NULL DEFAULT '[]'::jsonb,
-  next_menu_id    INT           NOT NULL DEFAULT 1,
-  next_session_id INT           NOT NULL DEFAULT 1,
-  updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+  next_menu_id     INT           NOT NULL DEFAULT 1,
+  next_session_id  INT           NOT NULL DEFAULT 1,
+  payment_accounts JSONB         NOT NULL DEFAULT '{}'::jsonb,
+  dlocal_url       TEXT          NOT NULL DEFAULT '',
+  updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
 -- 2. Sesiones activas de mesa
