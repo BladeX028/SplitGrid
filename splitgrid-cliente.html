@@ -654,10 +654,11 @@ function _scanFrame() {
   const result = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
   if (result) {
     closeQRScanner();
-    // Extract 6-char alphanumeric code (may be embedded in a URL)
-    const raw = result.data.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const match = raw.match(/[A-Z0-9]{6}/);
-    const code = match ? match[0] : raw.slice(0, 6);
+    // Extract 6-char code: prefer ?code= URL param, then fall back to first alphanum block
+    const _raw = result.data.trim();
+    const _urlParam = _raw.match(/[?&]code=([A-Z0-9]{6})/i)?.[1]?.toUpperCase();
+    const _stripped = _raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const code = _urlParam || _stripped.match(/[A-Z0-9]{6}/)?.[0] || _stripped.slice(0, 6);
     if (code.length === 6) {
       document.getElementById('join-code').value = code;
       toast('✅ QR leído: ' + code);
