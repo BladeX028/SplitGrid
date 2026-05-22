@@ -758,7 +758,7 @@ function openNewTableModal(forTableId) {
   openModal('modal-new-table');
 }
 
-function createSession() {
+async function createSession() {
   DB = loadRestDB();
   const tableId = parseInt(document.getElementById('nt-table-select').value);
   const table = DB.tables.find(t => t.id === tableId);
@@ -771,9 +771,14 @@ function createSession() {
     participants: [], orders: [], payments: [],
   };
   DB.sessions.push(s); table.status = 'occupied'; save();
+  // Sync directo a Supabase para que clientes cross-device puedan unirse inmediatamente
+  if (DB._loginEmail) {
+    await sbUpsertSession(DB._loginEmail, s).catch(() => {});
+  }
   closeModal('modal-new-table');
   toast('✅ Mesa #' + table.number + ' abierta · Código: ' + s.joinCode);
   openTableDetail(s.id);
+  openQRModal();
 }
 
 function closeTableSession() {
