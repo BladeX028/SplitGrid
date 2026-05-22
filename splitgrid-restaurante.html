@@ -9,8 +9,74 @@
 </head>
 <body>
 
+<!-- ═══ AUTH RESTAURANTE ═══ -->
+<div id="rest-auth" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--bg);padding:20px">
+  <div class="auth-card" style="max-width:460px;width:100%">
+    <div class="auth-logo">Split<span>Grid</span></div>
+    <div class="auth-sub">Panel de administración</div>
+
+    <div id="rest-auth-error" class="error-msg" style="display:none"></div>
+    <div id="rest-auth-info" class="info-msg" style="display:none"></div>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:0;margin-bottom:20px;background:var(--bg4);border-radius:var(--r2);padding:3px">
+      <button id="tab-login-btn" onclick="restShowTab('login')"
+        style="flex:1;padding:8px;border:none;border-radius:calc(var(--r2) - 2px);font-size:13px;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;background:var(--blue);color:white;transition:all .15s">
+        Iniciar sesión
+      </button>
+      <button id="tab-reg-btn" onclick="restShowTab('register')"
+        style="flex:1;padding:8px;border:none;border-radius:calc(var(--r2) - 2px);font-size:13px;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;background:transparent;color:var(--text3);transition:all .15s">
+        Registrar restaurante
+      </button>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="rest-tab-login">
+      <div class="form-group">
+        <label>Email del restaurante</label>
+        <input type="email" id="rest-login-email" placeholder="admin@mirestaurante.com">
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="rest-login-pass" placeholder="••••••••"
+          onkeydown="if(event.key==='Enter')restDoLogin()">
+      </div>
+      <button class="auth-big-btn" style="background:var(--blue);color:white;margin-top:4px" onclick="restDoLogin()">
+        Iniciar sesión →
+      </button>
+    </div>
+
+    <!-- REGISTRO -->
+    <div id="rest-tab-register" style="display:none">
+      <div class="form-group">
+        <label>Nombre del restaurante</label>
+        <input type="text" id="rest-reg-name" placeholder="Ej: El Rincón Criollo">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="rest-reg-email" placeholder="admin@mirestaurante.com">
+      </div>
+      <div class="form-group">
+        <label>Contraseña (mín. 6 caracteres)</label>
+        <input type="password" id="rest-reg-pass" placeholder="••••••••">
+      </div>
+      <div class="form-group">
+        <label>País</label>
+        <select id="rest-reg-country" style="width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;color:var(--text);font-size:14px;font-family:'Inter',sans-serif"></select>
+      </div>
+      <button class="auth-big-btn" style="background:var(--blue);color:white;margin-top:4px" onclick="restDoRegister()">
+        Crear restaurante →
+      </button>
+    </div>
+
+    <div style="text-align:center;margin-top:20px">
+      <a href="index.html" style="font-size:13px;color:var(--text3);text-decoration:none">← Volver al inicio</a>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ APP ═══ -->
-<div id="app">
+<div id="app" style="display:none">
 
 <aside class="sidebar" id="main-sidebar">
   <div class="sidebar-logo">
@@ -396,8 +462,107 @@ let personToRemove = null;
 let redistribSelected = new Set();
 let preSelectedTableId = null;
 
+// ─────────────────────────────────
+// AUTH
+// ─────────────────────────────────
+function _buildDefaultRestDB(email, name, country) {
+  const c = COUNTRIES[country] || COUNTRIES.CO;
+  const menuByCountry = {
+    CO:[{id:1,name:'Bandeja Paisa',emoji:'🍛',price:42000,cat:'Platos Fuertes',available:true},{id:2,name:'Ajiaco Bogotano',emoji:'🍜',price:35000,cat:'Platos Fuertes',available:true},{id:3,name:'Picada Mixta',emoji:'🥩',price:74000,cat:'Compartidos',available:true},{id:4,name:'Patacones',emoji:'🍟',price:12000,cat:'Entradas',available:true},{id:5,name:'Aguapanela',emoji:'🍵',price:8000,cat:'Bebidas',available:true},{id:6,name:'Cerveza Artesanal',emoji:'🍺',price:14000,cat:'Bebidas',available:true},{id:7,name:'Tres Leches',emoji:'🍰',price:18000,cat:'Postres',available:true}],
+    BR:[{id:1,name:'Feijoada',emoji:'🫘',price:58,cat:'Pratos Principais',available:true},{id:2,name:'Churrasco Misto',emoji:'🥩',price:89,cat:'Compartilhados',available:true},{id:3,name:'Pão de Queijo',emoji:'🧀',price:18,cat:'Entradas',available:true},{id:4,name:'Caipirinha',emoji:'🍹',price:24,cat:'Bebidas',available:true},{id:5,name:'Brigadeiro',emoji:'🍫',price:12,cat:'Sobremesas',available:true}],
+    FR:[{id:1,name:'Steak Frites',emoji:'🥩',price:24,cat:'Plats',available:true},{id:2,name:'Plateau de Fromages',emoji:'🧀',price:18,cat:'Partagés',available:true},{id:3,name:'Soupe à l\'oignon',emoji:'🍲',price:12,cat:'Entrées',available:true},{id:4,name:'Vin rouge (bouteille)',emoji:'🍷',price:28,cat:'Boissons',available:true},{id:5,name:'Crème brûlée',emoji:'🍮',price:9,cat:'Desserts',available:true}],
+    IT:[{id:1,name:'Spaghetti Carbonara',emoji:'🍝',price:16,cat:'Primi',available:true},{id:2,name:'Bistecca Fiorentina',emoji:'🥩',price:38,cat:'Secondi',available:true},{id:3,name:'Antipasto Misto',emoji:'🫒',price:22,cat:'Da dividere',available:true},{id:4,name:'Vino della Casa',emoji:'🍷',price:20,cat:'Bevande',available:true},{id:5,name:'Tiramisù',emoji:'☕',price:8,cat:'Dolci',available:true}],
+    RU:[{id:1,name:'Борщ',emoji:'🍲',price:420,cat:'Первые блюда',available:true},{id:2,name:'Пельмени',emoji:'🥟',price:580,cat:'Основные',available:true},{id:3,name:'Оливье',emoji:'🥗',price:680,cat:'На всех',available:true},{id:4,name:'Водка (бутылка)',emoji:'🍾',price:1200,cat:'Напитки',available:true},{id:5,name:'Медовик',emoji:'🍯',price:320,cat:'Десерты',available:true}],
+  };
+  const menu = menuByCountry[country] || menuByCountry.CO;
+  return {
+    _loggedIn: true, _loginEmail: email,
+    restaurant: { name: name || 'Mi Restaurante', address: '', country, tax: c.tax, tip: c.tip, numTables: 10, paymentAccounts: {}, dlocalUrl: '' },
+    tables: Array.from({length:10},(_,i)=>({id:i+1,number:i+1,status:'free'})),
+    sessions: [], menu, history: [], nextMenuId: menu.length + 1, nextSessionId: 1,
+  };
+}
+
+function restShowTab(tab) {
+  document.getElementById('rest-tab-login').style.display    = tab === 'login'    ? 'block' : 'none';
+  document.getElementById('rest-tab-register').style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('tab-login-btn').style.background    = tab === 'login'    ? 'var(--blue)' : 'transparent';
+  document.getElementById('tab-login-btn').style.color         = tab === 'login'    ? 'white' : 'var(--text3)';
+  document.getElementById('tab-reg-btn').style.background      = tab === 'register' ? 'var(--blue)' : 'transparent';
+  document.getElementById('tab-reg-btn').style.color           = tab === 'register' ? 'white' : 'var(--text3)';
+  document.getElementById('rest-auth-error').style.display = 'none';
+}
+
+function _restShowAuthError(msg) {
+  const e = document.getElementById('rest-auth-error');
+  e.textContent = msg; e.style.display = 'block';
+}
+
+async function restDoLogin() {
+  const email = document.getElementById('rest-login-email').value.trim();
+  const pass  = document.getElementById('rest-login-pass').value;
+  if (!email) { _restShowAuthError('Ingresa tu email'); return; }
+  if (pass.length < 6) { _restShowAuthError('Contraseña muy corta (mín. 6 caracteres)'); return; }
+
+  // Intentar cargar desde localStorage (mismo dispositivo)
+  const existing = loadRestDB();
+  if (existing && existing._loginEmail === email) {
+    DB = existing; DB._loggedIn = true;
+    saveRestDB(DB); _startRestApp(); return;
+  }
+  // Intentar cargar desde Supabase
+  const sbData = await sbLoadFullDB(email).catch(() => null);
+  if (sbData) {
+    DB = { ...sbData, _loggedIn: true, _loginEmail: email };
+    saveRestDB(DB, true); _startRestApp(); return;
+  }
+  _restShowAuthError('No encontramos una cuenta con ese email. ¿Es la primera vez? Usa "Registrar restaurante".');
+}
+
+async function restDoRegister() {
+  const name    = document.getElementById('rest-reg-name').value.trim();
+  const email   = document.getElementById('rest-reg-email').value.trim();
+  const pass    = document.getElementById('rest-reg-pass').value;
+  const country = document.getElementById('rest-reg-country').value;
+  if (!name)  { _restShowAuthError('Ingresa el nombre del restaurante'); return; }
+  if (!email) { _restShowAuthError('Ingresa tu email'); return; }
+  if (pass.length < 6) { _restShowAuthError('Contraseña muy corta (mín. 6 caracteres)'); return; }
+
+  // Verificar si ya existe en Supabase
+  const sbExisting = await sbLoadRestaurant(email).catch(() => null);
+  if (sbExisting) {
+    _restShowAuthError('Ya existe una cuenta con ese email. Usa "Iniciar sesión".');
+    return;
+  }
+  DB = _buildDefaultRestDB(email, name, country);
+  saveRestDB(DB);
+  _startRestApp();
+}
+
+function _showRestAuth() {
+  document.getElementById('rest-auth').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  // Llenar selector de países
+  const sel = document.getElementById('rest-reg-country');
+  if (sel && !sel.options.length) {
+    Object.entries(COUNTRIES).forEach(([code, c]) => {
+      const opt = document.createElement('option');
+      opt.value = code; opt.textContent = c.flag + ' ' + c.name + ' (' + c.currency + ')';
+      if (code === detectCountry()) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+}
+
+function _startRestApp() {
+  document.getElementById('rest-auth').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  initApp();
+  hydrateFromSupabase();
+}
+
 // Auth guard
-if (!DB || !DB._loggedIn) { window.location.href = 'index.html'; }
+if (!DB || !DB._loggedIn) { _showRestAuth(); }
 
 function save() { saveRestDB(DB); }
 function fmtR(n) { return fmt(n, DB.restaurant.country); }
@@ -409,7 +574,7 @@ function doLogout() {
   if (!confirm('¿Cerrar sesión del panel de restaurante?')) return;
   DB._loggedIn = false;
   save();
-  window.location.href = 'index.html';
+  _showRestAuth();
 }
 
 // ─────────────────────────────────
@@ -1323,8 +1488,7 @@ function closeMobileSidebar() {
   document.getElementById('sidebar-backdrop').classList.remove('open');
 }
 
-initApp();
-hydrateFromSupabase();
+if (DB && DB._loggedIn) { initApp(); hydrateFromSupabase(); }
 </script>
 </body>
 </html>
