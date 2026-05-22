@@ -10,8 +10,9 @@
 <body>
 
 <!-- ═══ AUTH CLIENTE ═══ -->
-<div id="cl-auth" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:var(--bg)">
-  <div class="auth-card" style="max-width:400px;width:calc(100% - 40px);margin:20px auto">
+<div id="cl-auth" style="display:none;position:fixed;inset:0;z-index:9999;overflow-y:auto;background:var(--bg)">
+  <div style="min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box">
+  <div class="auth-card" style="max-width:400px;width:100%">
     <div class="auth-logo">Split<span>Grid</span></div>
     <div class="auth-sub">Únete a una mesa y divide la cuenta</div>
 
@@ -48,6 +49,7 @@
     <div style="text-align:center;margin-top:20px">
       <a href="index.html" style="font-size:13px;color:var(--text3);text-decoration:none">← Volver al inicio</a>
     </div>
+  </div>
   </div>
 </div>
 
@@ -615,7 +617,7 @@ async function joinSession() {
 
   // ── Fallback: mismo dispositivo (localStorage) ──
   const restDB = loadRestDB();
-  if (!restDB) { toast('⚠️ No hay restaurante activo. Abre el panel de restaurante primero.'); return; }
+  if (!restDB) { toast('⚠️ Código no encontrado. Verifica que la mesa esté abierta e intenta de nuevo.'); return; }
   const s = restDB.sessions.find(se => (se.status==='occupied'||se.status==='paying') && se.joinCode === code);
   if (!s) { toast('⚠️ Código inválido o sesión cerrada'); return; }
   const pmap = JSON.parse(localStorage.getItem('sg_pmap') || '{}');
