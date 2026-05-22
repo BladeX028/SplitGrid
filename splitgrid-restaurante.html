@@ -353,6 +353,8 @@
 
 <div class="toast" id="toast"><span id="toast-msg">✅ Listo</span></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/db.js"></script>
 <script src="js/shared.js"></script>
 <script>
 // ─────────────────────────────────
@@ -1023,6 +1025,35 @@ function saveConfig() {
 }
 
 // ─────────────────────────────────
+// SUPABASE HYDRATION + REALTIME
+// ─────────────────────────────────
+async function hydrateFromSupabase() {
+  if (!DB._loginEmail) return;
+  try {
+    const sbDB = await sbLoadFullDB(DB._loginEmail);
+    if (sbDB) {
+      DB = { ...sbDB, _loggedIn: true, _loginEmail: DB._loginEmail };
+      saveRestDB(DB, true);
+      renderDashboard(); renderMenu(); renderHistory();
+    }
+  } catch(e) { console.warn('hydrateFromSupabase:', e); }
+
+  sbSubscribeRestaurant(DB._loginEmail, async () => {
+    try {
+      const sessions = await sbLoadSessions(DB._loginEmail);
+      DB = loadRestDB();
+      DB.sessions = sessions;
+      saveRestDB(DB, true);
+      renderDashboard();
+      if (currentDetailSession) {
+        const s = DB.sessions.find(se => se.id === currentDetailSession);
+        if (s) renderDetailPanel(s);
+      }
+    } catch(e) { console.warn('realtime handler:', e); }
+  });
+}
+
+// ─────────────────────────────────
 // QR
 // ─────────────────────────────────
 function openQRModal() {
@@ -1188,6 +1219,7 @@ function closeMobileSidebar() {
 }
 
 initApp();
+hydrateFromSupabase();
 </script>
 </body>
 </html>

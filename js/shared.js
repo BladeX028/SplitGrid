@@ -116,12 +116,13 @@ function elapsedMin(ts) {
 function loadRestDB() {
   return JSON.parse(localStorage.getItem('splitgrid_restaurant') || 'null');
 }
-function saveRestDB(db) {
+function saveRestDB(db, _skipSupabase) {
   localStorage.setItem('splitgrid_restaurant', JSON.stringify(db));
+  if (!_skipSupabase && typeof sbSyncDB === 'function') sbSyncDB(db).catch(() => {});
 }
 function loadClientState() {
   return JSON.parse(localStorage.getItem('splitgrid_client') || 'null') || {
-    user: null, country: detectCountry(), session: null, payments: []
+    user: null, country: detectCountry(), session: null, payments: [], menu: []
   };
 }
 function saveClientState(st) {

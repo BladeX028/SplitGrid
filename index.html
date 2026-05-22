@@ -36,9 +36,12 @@ body{display:flex;align-items:center;justify-content:center;overflow:auto}
         </div>
       </div>
       <!-- Country detected automatically -->
-      <div class="country-detected" id="country-detected">
-        <span id="detected-flag">🇨🇴</span>
-        <span id="detected-text">País detectado automáticamente: Colombia · COP</span>
+      <div class="country-detected" id="country-detected" style="justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="detected-flag">🇨🇴</span>
+          <span id="detected-text">País detectado: Colombia · COP</span>
+        </div>
+        <button onclick="goStep('step-country')" style="background:none;border:none;color:var(--green);cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;font-weight:600;text-decoration:underline;white-space:nowrap">Cambiar</button>
       </div>
       <button class="auth-big-btn" style="background:var(--blue);color:white;margin-top:4px" onclick="goStep('step-login')">
         Continuar →
