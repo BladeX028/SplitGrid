@@ -938,9 +938,19 @@ async function createSession() {
     participants: [], orders: [], payments: [],
   };
   DB.sessions.push(s); table.status = 'occupied'; save();
-  // Sync directo a Supabase para que clientes cross-device puedan unirse inmediatamente
+  // Sync directo a Supabase: primero restaurante (FK), luego sesión
   if (DB._loginEmail) {
-    await sbUpsertSession(DB._loginEmail, s).catch(() => {});
+    await sbSaveRestaurant(DB).catch(() => {});
+    const { error: sessErr } = await _sb.from('sg_sessions').upsert({
+      id: String(s.id), restaurant_id: DB._loginEmail,
+      table_number: s.tableNumber, table_id: String(s.tableId),
+      join_code: s.joinCode, status: s.status,
+      split_mode: s.splitMode || 'by_item',
+      tax: s.tax, tip: s.tip,
+      participants: [], orders: [], payments: [], transferred_debts: [],
+      opened_at: s.openedAt, closed_at: null,
+    }, { onConflict: 'id' });
+    if (sessErr) console.warn('createSession sync error:', sessErr.message);
   }
   closeModal('modal-new-table');
   toast('✅ Mesa #' + table.number + ' abierta · Código: ' + s.joinCode);
