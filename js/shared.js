@@ -11,7 +11,7 @@ const COUNTRIES = {
         {icon:'💚',name:'Daviplata',  sub:'Pago móvil',           bg:'linear-gradient(135deg,rgba(34,197,94,.2),rgba(5,150,105,.15))'},
         {icon:'🏦',name:'PSE',        sub:'Débito bancario',      bg:'linear-gradient(135deg,rgba(245,158,11,.2),rgba(217,119,6,.15))'},
         {icon:'💳',name:'Tarjeta',    sub:'Visa, Mastercard',     bg:'var(--bg4)'},
-        {icon:'💵',name:'Efecty',     sub:'Punto físico',         bg:'var(--bg4)'},
+        {icon:'💵',name:'Efectivo',     sub:'Punto físico',         bg:'var(--bg4)'},
       ]},
   BR:{name:'Brasil',      flag:'🇧🇷',currency:'BRL',sym:'R$',   tax:0,  tip:10, locale:'pt-BR',
       methods:[
@@ -149,9 +149,9 @@ function sessionSubtotal(s, menu) {
     return t + (mi ? mi.price * o.qty : 0);
   }, 0);
 }
+// IVA included in prices — returns subtotal only (tip is optional and separate)
 function sessionTotal(s, menu) {
-  const sub = sessionSubtotal(s, menu);
-  return sub * (1 + s.tax / 100 + s.tip / 100);
+  return sessionSubtotal(s, menu);
 }
 function calcPersonTotal(s, personId, menu) {
   let sub = 0;
@@ -169,11 +169,13 @@ function calcPersonTotal(s, personId, menu) {
       if (inList) sub += mi.price * o.qty / divisor;
     }
   });
-  const tax = sub * (s.tax / 100);
-  const tip = sub * (s.tip / 100);
+  // IVA included in price — no separate tax
+  const tipRate = (s.tip || 0) / 100;
+  const tip = sub * tipRate;
   // Add any debt transferred to this person when another participant was removed
   const transferred = (s.transferredDebts || [])
     .filter(td => td.toPersonId === personId)
     .reduce((t, td) => t + td.amount, 0);
-  return { sub, tax, tip, total: sub + tax + tip + transferred };
+  // total does NOT include tip — tip is optional and tracked separately
+  return { sub, tax: 0, tip, total: sub + transferred };
 }

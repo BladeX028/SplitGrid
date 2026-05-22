@@ -103,12 +103,29 @@
                 <div class="total-amount" id="my-total">$0</div>
                 <div class="total-meta" id="my-total-meta" style="margin-bottom:10px"></div>
                 <div id="tip-toggle-row" style="display:none;margin-bottom:12px">
-                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:rgba(0,0,0,.2);border-radius:var(--r);padding:8px 10px;font-family:'Inter',sans-serif">
-                    <input type="checkbox" id="tip-checkbox" onchange="onTipToggle()">
-                    <span style="font-size:13px;color:var(--text2)">Agregar propina (<span id="tip-pct-mesa">10</span>%)</span>
-                  </label>
+                  <div style="background:rgba(0,0,0,.2);border-radius:var(--r);padding:8px 10px">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-family:'Inter',sans-serif">
+                      <input type="checkbox" id="tip-checkbox" onchange="onTipToggle()">
+                      <span style="font-size:13px;color:var(--text2)">Agregar propina (sugerida: <span id="tip-pct-mesa">10</span>%)</span>
+                    </label>
+                    <div id="tip-dropdown-mesa" style="display:none;margin-top:10px">
+                      <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">Elige el porcentaje:</label>
+                      <select id="tip-select-mesa" onchange="onTipPctChange(this.value)" style="width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:7px 10px;font-size:13px;color:var(--text);font-family:'Inter',sans-serif">
+                        <option value="3">3%</option>
+                        <option value="5">5%</option>
+                        <option value="8">8%</option>
+                        <option value="10" selected>10%</option>
+                        <option value="12">12%</option>
+                        <option value="15">15%</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <button class="btn btn-primary btn-full btn-lg" onclick="showPanel('pago')">Ir a pagar →</button>
+                <div id="cash-pending-notice" style="display:none;background:var(--amber-bg);border:1px solid rgba(245,158,11,.25);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">
+                  <div style="font-size:13px;font-weight:600;color:var(--amber)">💵 Pago en efectivo registrado</div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:3px">Esperando confirmación del restaurante...</div>
+                </div>
+                <button class="btn btn-primary btn-full btn-lg" id="go-pay-btn-mesa" onclick="showPanel('pago')">Ir a pagar →</button>
               </div>
               <div style="margin-top:12px;display:flex;gap:6px">
                 <div style="flex:1;background:var(--green-bg);border-radius:var(--r);padding:10px;text-align:center">
@@ -152,10 +169,23 @@
               <div style="font-size:12px;color:var(--text3);margin-bottom:12px" id="pago-amount-sub"></div>
               <div style="background:var(--bg4);border-radius:var(--r);padding:14px;margin-bottom:12px" id="pago-breakdown"></div>
               <div id="tip-toggle-pago" style="display:none;margin-bottom:14px">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-family:'Inter',sans-serif">
-                  <input type="checkbox" id="tip-checkbox-pago" onchange="onTipToggle()">
-                  <span style="font-size:13px">Agregar propina (<span id="tip-pct-pago">10</span>%)</span>
-                </label>
+                <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-family:'Inter',sans-serif">
+                    <input type="checkbox" id="tip-checkbox-pago" onchange="onTipToggle()">
+                    <span style="font-size:13px">Agregar propina (sugerida: <span id="tip-pct-pago">10</span>%)</span>
+                  </label>
+                  <div id="tip-dropdown-pago" style="display:none;margin-top:10px">
+                    <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">Elige el porcentaje:</label>
+                    <select id="tip-select-pago" onchange="onTipPctChange(this.value)" style="width:100%;background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:7px 10px;font-size:13px;color:var(--text);font-family:'Inter',sans-serif">
+                      <option value="3">3%</option>
+                      <option value="5">5%</option>
+                      <option value="8">8%</option>
+                      <option value="10" selected>10%</option>
+                      <option value="12">12%</option>
+                      <option value="15">15%</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <button class="btn btn-primary btn-full btn-lg" onclick="processPayment()" id="pay-now-btn">Pagar →</button>
               <button class="btn btn-ghost btn-full btn-sm" style="margin-top:8px" onclick="showPanel('mesa')">Volver a mi mesa</button>
@@ -226,13 +256,26 @@
 
     <!-- ════ PANEL: HISTORIAL ════ -->
     <div class="panel" id="panel-historial">
-      <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
-        <div class="stat-card"><div class="stat-label">Gastado total</div><div class="stat-value" id="hist-total">$0</div><div class="stat-badge badge-blue" id="hist-currency">COP</div></div>
-        <div class="stat-card"><div class="stat-label">Mesas visitadas</div><div class="stat-value" id="hist-count">0</div><div class="stat-badge badge-green">Total</div></div>
-        <div class="stat-card"><div class="stat-label">Ticket promedio</div><div class="stat-value" id="hist-avg">$0</div><div class="stat-badge badge-purple">Por visita</div></div>
+      <!-- Muro para invitados -->
+      <div id="hist-guest-wall" style="display:none;text-align:center;padding:80px 16px">
+        <div style="font-size:48px;margin-bottom:16px">🔒</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;margin-bottom:8px">Inicia sesión para ver tu historial</div>
+        <div style="font-size:14px;color:var(--text3);margin-bottom:24px">Tu historial de pagos solo está disponible para usuarios registrados.</div>
+        <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;margin:0 auto">
+          <button class="btn btn-primary btn-lg btn-full" onclick="window.location.href='index.html'">Iniciar sesión →</button>
+          <button class="btn btn-ghost btn-full" style="display:flex;align-items:center;justify-content:center;gap:8px" onclick="window.location.href='index.html'"><span style="font-weight:800;font-size:15px">G</span> Continuar con Google</button>
+        </div>
       </div>
-      <div class="section-header"><div class="section-title">Mis pagos</div></div>
-      <div class="orders-list" id="hist-list"><div class="empty"><div class="empty-icon">📋</div><p>Sin historial aún</p></div></div>
+      <!-- Contenido para usuarios registrados -->
+      <div id="hist-content">
+        <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
+          <div class="stat-card"><div class="stat-label">Gastado total</div><div class="stat-value" id="hist-total">$0</div><div class="stat-badge badge-blue" id="hist-currency">COP</div></div>
+          <div class="stat-card"><div class="stat-label">Mesas visitadas</div><div class="stat-value" id="hist-count">0</div><div class="stat-badge badge-green">Total</div></div>
+          <div class="stat-card"><div class="stat-label">Ticket promedio</div><div class="stat-value" id="hist-avg">$0</div><div class="stat-badge badge-purple">Por visita</div></div>
+        </div>
+        <div class="section-header"><div class="section-title">Mis pagos</div></div>
+        <div class="orders-list" id="hist-list"><div class="empty"><div class="empty-icon">📋</div><p>Sin historial aún</p></div></div>
+      </div>
     </div>
 
     <!-- ════ PANEL: PERFIL ════ -->
@@ -250,6 +293,12 @@
           <div class="form-group">
             <label>País (detectado automáticamente por tu ubicación)</label>
             <div id="perfil-country-display" style="background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:9px 12px;font-size:13.5px;color:var(--text2)">—</div>
+          </div>
+          <!-- Login button para invitados -->
+          <div id="guest-login-section" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <div style="font-size:13px;color:var(--text3);margin-bottom:12px">Inicia sesión para acceder a tu historial y todas las funciones</div>
+            <button class="btn btn-primary btn-full" style="margin-bottom:8px" onclick="window.location.href='index.html'">Iniciar sesión →</button>
+            <button class="btn btn-ghost btn-full" style="display:flex;align-items:center;justify-content:center;gap:8px" onclick="window.location.href='index.html'"><span style="font-weight:800;font-size:14px">G</span> Continuar con Google</button>
           </div>
         </div>
       </div>
@@ -295,6 +344,7 @@
 let CL = loadClientState();
 let selectedMethod = 0;
 let includeTip = false;
+let selectedTipPct = 10; // starts at restaurant's default, updated on render
 
 // Auth guard
 if (!CL.user) { window.location.href = 'index.html'; }
@@ -324,6 +374,9 @@ function launchApp() {
   document.getElementById('perfil-email').textContent = u.email || 'Invitado';
   document.getElementById('perfil-badge').textContent = u.isGuest ? '👤 Invitado' : '✓ Verificado';
   document.getElementById('perfil-badge').className = 'badge ' + (u.isGuest ? 'badge-gray' : 'badge-blue');
+  // Show login section in profile for guests
+  const guestLoginSection = document.getElementById('guest-login-section');
+  if (guestLoginSection) guestLoginSection.style.display = u.isGuest ? 'block' : 'none';
   const c = COUNTRIES[CL.country] || COUNTRIES.CO;
   document.getElementById('topbar-currency').textContent = c.flag + ' ' + c.currency;
   document.getElementById('perfil-country-display').textContent = c.flag + ' ' + c.name + ' (' + c.currency + ') — detectado automáticamente';
@@ -344,6 +397,7 @@ function showPanel(id) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const map = {mesa:0,pago:1,historial:2,join:3,perfil:4};
   if (map[id] !== undefined) document.querySelectorAll('.nav-item')[map[id]].classList.add('active');
+  if (id === 'mesa') renderMesa();
   if (id === 'pago') renderPago();
   if (id === 'historial') renderHistory();
   if (window.innerWidth <= 768) closeMobileSidebar();
@@ -393,7 +447,6 @@ function joinSession() {
   saveC();
   document.getElementById('sidebar-sub').textContent = 'Mesa #' + s.tableNumber + ' · Activa';
   document.getElementById('live-indicator').style.display = 'flex';
-  document.getElementById('topbar-pay-btn').style.display = 'inline-flex';
   toast(rejoining
     ? '✅ Reingresaste a Mesa #' + s.tableNumber + ' como ' + name
     : '✅ Te uniste a Mesa #' + s.tableNumber + ' · ' + restDB.restaurant.name);
@@ -416,7 +469,7 @@ function leaveTable() {
   let proxyTotal = 0;
   managedProxyIds.forEach(pid => { proxyTotal += calcPersonTotal(s, pid, restDB.menu).total; });
   const grandTotal = total + proxyTotal;
-  const hasPaid = (s.payments||[]).some(pay => pay.personId === myId && pay.status === 'paid');
+  const hasPaid = (s.payments||[]).some(pay => pay.personId === myId && (pay.status === 'paid' || pay.status === 'pending_cash'));
   if (grandTotal > 0 && !hasPaid) {
     toast('⚠️ Debes pagar tu cuenta antes de salir de la mesa');
     showPanel('pago');
@@ -427,12 +480,25 @@ function leaveTable() {
 }
 
 // ─────────────────────────────────
-// TIP TOGGLE
+// TIP TOGGLE + DROPDOWN
 // ─────────────────────────────────
 function onTipToggle() {
   includeTip = !includeTip;
   ['tip-checkbox','tip-checkbox-pago'].forEach(id => {
     const el = document.getElementById(id); if (el) el.checked = includeTip;
+  });
+  // Show/hide dropdown
+  ['tip-dropdown-mesa','tip-dropdown-pago'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = includeTip ? 'block' : 'none';
+  });
+  renderMesa(); renderPago();
+}
+
+function onTipPctChange(val) {
+  selectedTipPct = parseInt(val) || 10;
+  // Sync both dropdowns
+  ['tip-select-mesa','tip-select-pago'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = String(selectedTipPct);
   });
   renderMesa(); renderPago();
 }
@@ -472,6 +538,26 @@ function renderMesa() {
   const restDB = loadRestDB();
   const s = restDB?.sessions?.find(se => se.id === CL.session.sessionId);
   if (!s) { CL.session = null; saveC(); renderMesa(); return; }
+
+  // Detect cash payments confirmed by restaurant → add to history and notify client
+  const myId_early = CL.session.myId;
+  const confirmedNow = (s.payments||[]).filter(pay => pay.personId === myId_early && pay.status === 'paid');
+  let historyUpdated = false;
+  confirmedNow.forEach(pay => {
+    if (!(CL.payments||[]).some(h => h.ref === pay.ref)) {
+      CL.payments = CL.payments || [];
+      CL.payments.push({
+        ref: pay.ref, amount: pay.amount, method: pay.method,
+        restaurantName: CL.session.restaurantName, tableNumber: CL.session.tableNumber,
+        paidAt: pay.paidAt, country: CL.country
+      });
+      historyUpdated = true;
+      if (pay.method === 'Efectivo' || pay.method === 'Boleto') {
+        toast('✅ Tu pago en efectivo fue confirmado por el restaurante');
+      }
+    }
+  });
+  if (historyUpdated) saveC();
 
   // Bar
   document.getElementById('mesa-bar').innerHTML = `
@@ -544,35 +630,67 @@ function renderMesa() {
     </div>`;
   });
 
-  // My account breakdown (tip-aware)
-  const {sub, tax, tip, total} = calcPersonTotal(s, myId, restDB.menu);
-  const myPersonalTotal = total - tip + (includeTip ? tip : 0);
-  let proxyTotal = 0;
-  managedProxyIds.forEach(pid => {
-    const {total: pt, tip: ptip} = calcPersonTotal(s, pid, restDB.menu);
-    proxyTotal += pt - ptip + (includeTip ? ptip : 0);
-  });
-  const grandMine = myPersonalTotal + proxyTotal;
-  const paidAmt = (s.payments||[]).filter(p => p.personId===myId && p.status==='paid').reduce((t,p)=>t+p.amount,0);
+  // Real-time tip sync
+  const currentRestTip = restDB.restaurant.tip || 0;
+  if (!includeTip) selectedTipPct = currentRestTip || 10;
+
+  // Totals: self + all managed proxies
+  const {sub, total} = calcPersonTotal(s, myId, restDB.menu); // total = sub + transferred (no tip)
+  let proxyTotalAll = 0;
+  managedProxyIds.forEach(pid => { proxyTotalAll += calcPersonTotal(s, pid, restDB.menu).total; });
+  const totalOwed = total + proxyTotalAll; // everything I'm responsible for
+
+  // Confirmed paid (baseAmount or full amount for legacy payments)
+  const paidSoFar = (s.payments||[])
+    .filter(pay => pay.personId===myId && pay.status==='paid')
+    .reduce((t, pay) => t + (pay.baseAmount !== undefined ? pay.baseAmount : pay.amount), 0);
+
+  // Cash payment pending (registered but awaiting restaurant confirmation)
+  const cashPendingPayment = (s.payments||[]).find(pay => pay.personId === myId && pay.status === 'pending_cash');
+
+  // Tip applies ONLY to the remaining unpaid balance
+  const pendingBase = Math.max(0, totalOwed - paidSoFar);
+  const myTipAmt = includeTip ? pendingBase * selectedTipPct / 100 : 0;
+  const grandMine = pendingBase + myTipAmt; // what I still need to pay
+
+  // From client's perspective: if cash registered, they're "waiting" (show 0 as due)
+  const dueAmt = cashPendingPayment ? 0 : grandMine;
+
   document.getElementById('my-total').textContent = fmtC(grandMine);
-  const tipLabel = s.tip > 0 ? (includeTip ? ` · Propina ${s.tip}% ✓` : ' · Sin propina') : '';
-  document.getElementById('my-total-meta').textContent = (COUNTRIES[CL.country]?.currency||'COP') + ' · IVA ' + s.tax + '%' + tipLabel;
-  document.getElementById('my-paid').textContent = fmtC(paidAmt);
-  document.getElementById('my-due').textContent = fmtC(grandMine - paidAmt);
-  // Personal total row (shown only when managing proxy guests)
+  const tipLabel = currentRestTip > 0 ? (includeTip ? ` · Propina ${selectedTipPct}% (sobre saldo pendiente)` : ' · Sin propina') : '';
+  document.getElementById('my-total-meta').textContent = (COUNTRIES[CL.country]?.currency||'COP') + tipLabel;
+  document.getElementById('my-paid').textContent = fmtC(paidSoFar);
+  document.getElementById('my-due').textContent = fmtC(dueAmt);
+
+  // Cash pending notice
+  const cashNotice = document.getElementById('cash-pending-notice');
+  if (cashNotice) cashNotice.style.display = cashPendingPayment ? 'block' : 'none';
+
+  // Disable pay buttons when no pending balance or cash is registered
+  const goPayBtn = document.getElementById('go-pay-btn-mesa');
+  const topPayBtn = document.getElementById('topbar-pay-btn');
+  const canPay = grandMine > 0 && !cashPendingPayment;
+  if (goPayBtn) { goPayBtn.disabled = !canPay; }
+  if (topPayBtn) { topPayBtn.style.display = CL.session && canPay ? 'inline-flex' : 'none'; }
+
+  // Personal total row (only when managing proxies AND no partial payment confusion)
   const personalRow = document.getElementById('my-personal-total-row');
-  if (managedProxyIds.length > 0) {
+  if (managedProxyIds.length > 0 && paidSoFar === 0) {
     personalRow.style.display = 'block';
-    document.getElementById('my-personal-total').textContent = fmtC(myPersonalTotal);
+    document.getElementById('my-personal-total').textContent = fmtC(total + myTipAmt);
   } else {
     personalRow.style.display = 'none';
   }
-  // Tip toggle (shown when session has a suggested tip)
+  // Tip toggle (shown when restaurant has a suggested tip > 0)
   const tipRow = document.getElementById('tip-toggle-row');
-  if (s.tip > 0) {
+  if (currentRestTip > 0) {
     tipRow.style.display = 'block';
-    document.getElementById('tip-pct-mesa').textContent = s.tip;
+    document.getElementById('tip-pct-mesa').textContent = currentRestTip;
     document.getElementById('tip-checkbox').checked = includeTip;
+    const dropMesa = document.getElementById('tip-dropdown-mesa');
+    if (dropMesa) dropMesa.style.display = includeTip ? 'block' : 'none';
+    const selMesa = document.getElementById('tip-select-mesa');
+    if (selMesa && !includeTip) selMesa.value = String(selectedTipPct);
   } else {
     tipRow.style.display = 'none';
   }
@@ -593,9 +711,8 @@ function renderMesa() {
   (s.transferredDebts||[]).filter(td => td.toPersonId === myId).forEach(td => {
     rows.innerHTML += `<div class="pb-row"><span class="pb-label" style="color:var(--amber)">Saldo transferido (${td.fromName})</span><span class="pb-val">${fmtC(td.amount)}</span></div>`;
   });
-  if (sub > 0) {
-    if (s.tax > 0) rows.innerHTML += `<div class="pb-row"><span class="pb-label">IVA (${s.tax}%)</span><span class="pb-val">${fmtC(tax)}</span></div>`;
-    if (s.tip > 0 && includeTip) rows.innerHTML += `<div class="pb-row"><span class="pb-label">Propina (${s.tip}%)</span><span class="pb-val">${fmtC(tip)}</span></div>`;
+  if (pendingBase > 0 && includeTip && myTipAmt > 0) {
+    rows.innerHTML += `<div class="pb-row"><span class="pb-label" style="color:var(--amber)">Propina ${selectedTipPct}% (sobre saldo pendiente)</span><span class="pb-val">${fmtC(myTipAmt)}</span></div>`;
   }
 
   // Per-proxy breakdown (only visible to managing client)
@@ -646,37 +763,73 @@ function renderPago() {
     div.onclick = () => { selectedMethod = i; renderPago(); };
     ml.appendChild(div);
   });
-  // Totals (tip-aware)
+  // Real-time tip sync
+  const currentRestTipPago = restDB.restaurant.tip || 0;
+  if (!includeTip) selectedTipPct = currentRestTipPago || 10;
+
+  // Totals
   const myId = CL.session.myId;
   const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
-  const {sub, tax, tip, total} = calcPersonTotal(s, myId, restDB.menu);
-  const myPersonalPago = total - tip + (includeTip ? tip : 0);
-  let proxyTotal = 0;
-  managedProxyIds.forEach(pid => {
-    const {total: pt, tip: ptip} = calcPersonTotal(s, pid, restDB.menu);
-    proxyTotal += pt - ptip + (includeTip ? ptip : 0);
-  });
-  const grandMine = myPersonalPago + proxyTotal;
-  // Personal total row
+  const {sub, total} = calcPersonTotal(s, myId, restDB.menu); // total = sub + transferred, no tip
+  let proxyTotalAll = 0;
+  managedProxyIds.forEach(pid => { proxyTotalAll += calcPersonTotal(s, pid, restDB.menu).total; });
+  const totalOwedPago = total + proxyTotalAll;
+
+  // Already confirmed-paid
+  const paidSoFarPago = (s.payments||[])
+    .filter(pay => pay.personId === myId && pay.status === 'paid')
+    .reduce((t, pay) => t + (pay.baseAmount !== undefined ? pay.baseAmount : pay.amount), 0);
+
+  // Tip applies ONLY on the remaining unpaid balance
+  const pendingBasePago = Math.max(0, totalOwedPago - paidSoFarPago);
+  const myTipAmtPago = includeTip ? pendingBasePago * selectedTipPct / 100 : 0;
+  const grandMine = pendingBasePago + myTipAmtPago;
+
+  // Payment state checks
+  const alreadyPaid = pendingBasePago <= 0 && paidSoFarPago > 0;
+  const cashPending = (s.payments||[]).some(pay => pay.personId === myId && pay.status === 'pending_cash');
+
+  // Personal total row (only when managing proxies and no prior payments)
   const pagoPersonalRow = document.getElementById('pago-personal-row');
-  if (managedProxyIds.length > 0) {
+  if (managedProxyIds.length > 0 && paidSoFarPago === 0) {
     pagoPersonalRow.style.display = 'block';
-    document.getElementById('pago-personal-amt').textContent = fmtC(myPersonalPago);
+    document.getElementById('pago-personal-amt').textContent = fmtC(total);
   } else {
     pagoPersonalRow.style.display = 'none';
   }
   document.getElementById('pago-amount-big').textContent = fmtC(grandMine);
   document.getElementById('pago-amount-sub').textContent = c.currency + ' · ' + CL.session.myName + ' · Mesa #' + s.tableNumber;
-  document.getElementById('pay-now-btn').textContent = 'Pagar ' + fmtC(grandMine) + ' →';
+
+  // Pay button state
+  const payNowBtn = document.getElementById('pay-now-btn');
+  if (alreadyPaid) {
+    payNowBtn.textContent = '✅ Ya pagaste';
+    payNowBtn.disabled = true;
+  } else if (cashPending) {
+    payNowBtn.textContent = '⏳ Pago en efectivo pendiente de confirmación';
+    payNowBtn.disabled = true;
+  } else if (grandMine <= 0) {
+    payNowBtn.textContent = 'Sin saldo pendiente';
+    payNowBtn.disabled = true;
+  } else {
+    payNowBtn.textContent = 'Pagar ' + fmtC(grandMine) + ' →';
+    payNowBtn.disabled = false;
+  }
+
   // Tip toggle
   const tipPago = document.getElementById('tip-toggle-pago');
-  if (s.tip > 0) {
+  if (currentRestTipPago > 0) {
     tipPago.style.display = 'block';
-    document.getElementById('tip-pct-pago').textContent = s.tip;
+    document.getElementById('tip-pct-pago').textContent = currentRestTipPago;
     document.getElementById('tip-checkbox-pago').checked = includeTip;
+    const dropPago = document.getElementById('tip-dropdown-pago');
+    if (dropPago) dropPago.style.display = includeTip ? 'block' : 'none';
+    const selPago = document.getElementById('tip-select-pago');
+    if (selPago) selPago.value = String(selectedTipPct);
   } else {
     tipPago.style.display = 'none';
   }
+
   const breakdown = document.getElementById('pago-breakdown'); breakdown.innerHTML = '';
   const myOrders = (s.orders||[]).filter(o => o.type==='individual' && (o.personId===myId || managedProxyIds.includes(o.personId)));
   myOrders.forEach(o => { const mi = restDB?.menu?.find(m=>m.id===o.menuItemId); if(mi) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label">${mi.name}</span><span class="pb-val">${fmtC(mi.price*o.qty)}</span></div>`; });
@@ -690,10 +843,11 @@ function renderPago() {
   (s.transferredDebts||[]).filter(td=>td.toPersonId===myId).forEach(td => {
     breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label" style="color:var(--amber)">Saldo transferido (${td.fromName})</span><span class="pb-val">${fmtC(td.amount)}</span></div>`;
   });
-  if (proxyTotal > 0) breakdown.innerHTML += `<div class="pb-row"><span class="pb-label">Comensales a mi cargo 🔹</span><span class="pb-val">${fmtC(proxyTotal)}</span></div>`;
-  if (s.tax>0) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label">IVA (${s.tax}%)</span><span class="pb-val">${fmtC(tax)}</span></div>`;
-  if (s.tip>0 && includeTip) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label">Propina (${s.tip}%)</span><span class="pb-val">${fmtC(tip)}</span></div>`;
-  breakdown.innerHTML+=`<div class="pb-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:10px"><span style="font-size:14px;font-weight:600">Total</span><span style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700">${fmtC(grandMine)}</span></div>`;
+  if (proxyTotalAll > 0 && paidSoFarPago === 0) breakdown.innerHTML += `<div class="pb-row"><span class="pb-label">Comensales a mi cargo 🔹</span><span class="pb-val">${fmtC(proxyTotalAll)}</span></div>`;
+  if (paidSoFarPago > 0) breakdown.innerHTML += `<div class="pb-row"><span class="pb-label" style="color:var(--green)">Ya pagado anteriormente</span><span class="pb-val" style="color:var(--green)">-${fmtC(paidSoFarPago)}</span></div>`;
+  // IVA included in prices — no separate IVA line
+  if (includeTip && myTipAmtPago > 0) breakdown.innerHTML+=`<div class="pb-row"><span class="pb-label" style="color:var(--amber)">Propina ${selectedTipPct}% (sobre saldo pendiente)</span><span class="pb-val">${fmtC(myTipAmtPago)}</span></div>`;
+  breakdown.innerHTML+=`<div class="pb-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:10px"><span style="font-size:14px;font-weight:600">Total a pagar</span><span style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700">${fmtC(grandMine)}</span></div>`;
 }
 
 // ─────────────────────────────────
@@ -703,34 +857,72 @@ function processPayment() {
   const restDB = loadRestDB(); if (!restDB || !CL.session) return;
   const s = restDB.sessions.find(se => se.id === CL.session.sessionId); if (!s) return;
   const myId = CL.session.myId;
+
+  // Block if there's already a pending cash payment
+  const hasCashPending = (s.payments||[]).some(pay => pay.personId === myId && pay.status === 'pending_cash');
+  if (hasCashPending) { toast('⚠️ Tienes un pago en efectivo esperando confirmación del restaurante'); return; }
+
   const managedProxyIds = (s.participants||[]).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
-  const {total, tip, tax} = calcPersonTotal(s, myId, restDB.menu);
-  const myPersonalFinal = total - tip + (includeTip ? tip : 0);
-  let proxyTotal = 0;
-  managedProxyIds.forEach(pid => {
-    const {total: pt, tip: ptip} = calcPersonTotal(s, pid, restDB.menu);
-    proxyTotal += pt - ptip + (includeTip ? ptip : 0);
-  });
-  const grandMine = myPersonalFinal + proxyTotal;
+  const {sub, total} = calcPersonTotal(s, myId, restDB.menu); // total = sub + transferred, no tip
+  let proxyBase = 0;
+  managedProxyIds.forEach(pid => { proxyBase += calcPersonTotal(s, pid, restDB.menu).total; });
+  const totalOwed = total + proxyBase;
+
+  // Already confirmed-paid
+  const paidSoFar = (s.payments||[])
+    .filter(pay => pay.personId === myId && pay.status === 'paid')
+    .reduce((t, pay) => t + (pay.baseAmount !== undefined ? pay.baseAmount : pay.amount), 0);
+
+  // Tip ONLY on the remaining unpaid balance
+  const baseAmount = Math.max(0, totalOwed - paidSoFar); // pending subtotal
+  if (baseAmount <= 0) { toast('⚠️ No tienes saldo pendiente'); return; }
+
+  const tipAmount = includeTip ? baseAmount * selectedTipPct / 100 : 0;
+  const grandMine = baseAmount + tipAmount;
+
   const c = COUNTRIES[CL.country] || COUNTRIES.CO;
   const method = c.methods[selectedMethod]?.name || '?';
+  const isCash = method === 'Efectivo' || method === 'Boleto';
   const ref = 'SGR-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*999999)).padStart(6,'0');
+  const paymentStatus = isCash ? 'pending_cash' : 'paid';
+
   s.payments = s.payments || [];
-  s.payments.push({personId: myId, amount: grandMine, method, status:'paid', ref, paidAt: new Date().toISOString(), tipIncluded: includeTip});
+  s.payments.push({
+    personId: myId,
+    amount: grandMine,
+    baseAmount: baseAmount,
+    tipAmount: tipAmount,
+    method,
+    status: paymentStatus,
+    ref,
+    paidAt: new Date().toISOString(),
+    tipIncluded: includeTip,
+    tipPct: includeTip ? selectedTipPct : 0
+  });
   saveRestDB(restDB);
+
+  if (isCash) {
+    // Cash: stay on mesa panel, show pending notice (restDB already saved above)
+    toast('💵 Pago en efectivo registrado · El restaurante confirmará tu pago');
+    showPanel('mesa');
+    return;
+  }
+
+  // Non-cash: add to client history and show success screen
   const histEntry = {ref, amount: grandMine, method, restaurantName: CL.session.restaurantName, tableNumber: CL.session.tableNumber, paidAt: new Date().toISOString(), country: CL.country};
   CL.payments = CL.payments || [];
   CL.payments.push(histEntry);
   saveC();
+
   document.getElementById('exito-sub').textContent = CL.session.restaurantName + ' · Mesa #' + s.tableNumber;
   document.getElementById('exito-receipt').innerHTML = `
     <div class="section-title" style="margin-bottom:14px">Recibo de pago</div>
     <div class="rr"><span class="rr-k">Método</span><span class="rr-v">${method}</span></div>
     <div class="rr"><span class="rr-k">Monto pagado</span><span class="rr-v" style="color:var(--green)">${fmtC(grandMine)}</span></div>
-    ${s.tax>0?`<div class="rr"><span class="rr-k">IVA (${s.tax}%)</span><span class="rr-v">${fmtC(tax)}</span></div>`:''}
-    ${s.tip>0&&includeTip?`<div class="rr"><span class="rr-k">Propina (${s.tip}%)</span><span class="rr-v">${fmtC(tip)}</span></div>`:''}
-    ${s.tip>0&&!includeTip?`<div class="rr"><span class="rr-k">Propina</span><span class="rr-v" style="color:var(--text3)">No incluida</span></div>`:''}
-    ${proxyTotal>0?`<div class="rr"><span class="rr-k">Comensales a cargo</span><span class="rr-v">${fmtC(proxyTotal)}</span></div>`:''}
+    ${includeTip && tipAmount>0 ? `<div class="rr"><span class="rr-k">Propina incluida (${selectedTipPct}%)</span><span class="rr-v">${fmtC(tipAmount)}</span></div>` : ''}
+    ${!includeTip && (restDB.restaurant.tip||0)>0 ? `<div class="rr"><span class="rr-k">Propina</span><span class="rr-v" style="color:var(--text3)">No incluida</span></div>` : ''}
+    ${proxyBase>0&&paidSoFar===0?`<div class="rr"><span class="rr-k">Comensales a cargo</span><span class="rr-v">${fmtC(proxyBase)}</span></div>`:''}
+    ${paidSoFar>0?`<div class="rr"><span class="rr-k">Pago previo ya registrado</span><span class="rr-v" style="color:var(--green)">-${fmtC(paidSoFar)}</span></div>`:''}
     <div class="rr"><span class="rr-k">Mesa</span><span class="rr-v">#${s.tableNumber} · ${s.participants?.length||0} personas</span></div>
     <div class="rr"><span class="rr-k">Restaurante</span><span class="rr-v">${CL.session.restaurantName}</span></div>
     <div class="rr"><span class="rr-k">Referencia</span><span class="rr-v" style="font-family:monospace;font-size:11px;color:var(--text3)">${ref}</span></div>`;
@@ -749,6 +941,16 @@ function leaveSession() {
 // HISTORY
 // ─────────────────────────────────
 function renderHistory() {
+  const guestWall = document.getElementById('hist-guest-wall');
+  const histContent = document.getElementById('hist-content');
+  if (CL.user?.isGuest) {
+    if (guestWall) guestWall.style.display = 'block';
+    if (histContent) histContent.style.display = 'none';
+    return;
+  }
+  if (guestWall) guestWall.style.display = 'none';
+  if (histContent) histContent.style.display = 'block';
+
   const payments = CL.payments || [];
   const total = payments.reduce((s,p) => s+p.amount, 0);
   const avg = payments.length ? total/payments.length : 0;

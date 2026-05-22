@@ -49,7 +49,6 @@
     <button class="topbar-menu-btn" onclick="openMobileSidebar()" aria-label="Abrir menú">☰</button>
     <div class="topbar-title" id="topbar-title">Dashboard</div>
     <div class="topbar-actions">
-      <div class="topbar-live"><div class="live-dot"></div><span class="live-label">EN VIVO</span></div>
       <button class="btn btn-ghost btn-sm" id="topbar-currency">🇨🇴 COP</button>
       <button class="btn btn-primary" onclick="openNewTableModal()">+ Nueva sesión</button>
     </div>
@@ -61,10 +60,19 @@
     <div class="panel active" id="panel-dashboard">
       <div class="stats-row" style="grid-template-columns:repeat(auto-fill,minmax(155px,1fr))">
         <div class="stat-card"><div class="stat-label">Ventas hoy</div><div class="stat-value" id="dash-sales">$0</div><div class="stat-badge badge-green">Hoy</div></div>
+        <div class="stat-card"><div class="stat-label">Ventas del mes</div><div class="stat-value" id="dash-sales-month">$0</div><div class="stat-badge badge-blue">Este mes</div></div>
         <div class="stat-card"><div class="stat-label">Mesas activas</div><div class="stat-value" id="dash-active">0</div><div class="stat-badge badge-blue" id="dash-occ">0%</div></div>
         <div class="stat-card"><div class="stat-label">Pendientes</div><div class="stat-value" id="dash-pending">$0</div><div class="stat-badge badge-amber" id="dash-pending-tables">0 mesas</div></div>
         <div class="stat-card"><div class="stat-label">Clientes ahora</div><div class="stat-value" id="dash-clients">0</div><div class="stat-badge badge-purple">En mesa</div></div>
         <div class="stat-card"><div class="stat-label">Clientes hoy</div><div class="stat-value" id="dash-clients-today">0</div><div class="stat-badge badge-cyan">En el día</div></div>
+      </div>
+      <!-- Pagos en efectivo pendientes -->
+      <div id="cash-pending-section" style="display:none;margin-bottom:20px">
+        <div class="section-header">
+          <div class="section-title">💵 Pagos en efectivo pendientes</div>
+          <span class="badge badge-amber" id="cash-pending-count">0</span>
+        </div>
+        <div class="orders-list" id="cash-pending-list"></div>
       </div>
       <div class="section-header">
         <div class="section-title">Mesas activas</div>
@@ -169,7 +177,7 @@
           <div class="form-group"><label>Número de mesas</label><input type="number" id="cfg-tables" min="1" max="100"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>IVA / Impuesto (%)</label><input type="number" id="cfg-tax" min="0" max="50" step="0.5"></div>
+          <div class="form-group"><label>IVA / Impuesto (%) — incluido en los precios</label><input type="number" id="cfg-tax" min="0" max="50" step="0.5" placeholder="Ya incluido en precios"></div>
           <div class="form-group"><label>Propina sugerida (%)</label><input type="number" id="cfg-tip" min="0" max="30"></div>
         </div>
         <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
@@ -357,6 +365,7 @@ let shareAllSelected = false;
 let selectedSharePersons = new Set();
 let personToRemove = null;
 let redistribSelected = new Set();
+let preSelectedTableId = null;
 
 // Auth guard
 if (!DB || !DB._loggedIn) { window.location.href = 'index.html'; }
@@ -417,24 +426,64 @@ function showPanel(id) {
 function renderDashboard() {
   DB = loadRestDB(); // sync from localStorage (real-time)
   const active = DB.sessions.filter(s => s.status === 'occupied' || s.status === 'paying');
-  const paidToday = DB.history.reduce((s, h) => s + (h.total || 0), 0);
-  const pendingTotal = active.reduce((s, se) => s + sessionTotal(se, DB.menu), 0);
-  const clients = active.reduce((s, se) => s + (se.participants?.length || 0), 0);
+
+  // Sales today (closed sessions)
   const today = new Date().toDateString();
   const histToday = DB.history.filter(h => new Date(h.closedAt || h.openedAt).toDateString() === today);
+  const paidToday = histToday.reduce((s, h) => s + (h.total || 0), 0);
+
+  // Sales this month (closed sessions)
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const histMonth = DB.history.filter(h => new Date(h.closedAt || h.openedAt) >= monthStart);
+  const salesMonth = histMonth.reduce((s, h) => s + (h.total || 0), 0);
+
+  // Pending total (active sessions, subtotal without tip)
+  const pendingTotal = active.reduce((s, se) => s + sessionTotal(se, DB.menu), 0);
+  const clients = active.reduce((s, se) => s + (se.participants?.length || 0), 0);
   const sessionsOpenedToday = DB.sessions.filter(s => new Date(s.openedAt).toDateString() === today);
   const clientsToday = [...histToday, ...sessionsOpenedToday].reduce((acc, s) => acc + (s.participants?.length || 0), 0);
+
   document.getElementById('dash-sales').textContent = fmtR(paidToday);
+  document.getElementById('dash-sales-month').textContent = fmtR(salesMonth);
   document.getElementById('dash-active').textContent = active.length + ' / ' + DB.tables.length;
-  document.getElementById('dash-occ').textContent = Math.round(active.length / DB.tables.length * 100) + '% ocupación';
+  document.getElementById('dash-occ').textContent = Math.round(active.length / (DB.tables.length || 1) * 100) + '% ocupación';
   document.getElementById('dash-pending').textContent = fmtR(pendingTotal);
   document.getElementById('dash-pending-tables').textContent = active.length + ' mesas';
   document.getElementById('dash-clients').textContent = clients;
   document.getElementById('dash-clients-today').textContent = clientsToday;
   document.getElementById('active-tables-badge').textContent = active.length;
+
+  // Cash pending payments
+  const pendingCash = active.flatMap(s =>
+    (s.payments || []).filter(p => p.status === 'pending_cash').map(p => ({...p, session: s}))
+  );
+  const cashSection = document.getElementById('cash-pending-section');
+  const cashList = document.getElementById('cash-pending-list');
+  if (pendingCash.length > 0) {
+    cashSection.style.display = 'block';
+    document.getElementById('cash-pending-count').textContent = pendingCash.length;
+    cashList.innerHTML = '';
+    pendingCash.forEach(p => {
+      const person = (p.session.participants||[]).find(pp => pp.id === p.personId);
+      cashList.innerHTML += `<div class="order-item" style="border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)">
+        <div style="width:42px;height:42px;background:var(--amber-bg);border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">💵</div>
+        <div style="flex:1">
+          <div class="order-name">${person?.name || 'Cliente'} — Mesa #${p.session.tableNumber}</div>
+          <div class="order-person">Efectivo · ${new Date(p.paidAt).toLocaleTimeString()}</div>
+        </div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;margin-right:12px">${fmtR(p.amount)}</div>
+        <button class="btn btn-success btn-sm" onclick="confirmCashPayment(${p.session.id},'${p.ref}')">✓ Confirmar</button>
+      </div>`;
+    });
+  } else {
+    cashSection.style.display = 'none';
+  }
+
   const grid = document.getElementById('dash-tables');
   grid.innerHTML = '';
   active.slice(0, 6).forEach(s => grid.appendChild(makeTableCard(s)));
+
   const allOrders = active.flatMap(s => (s.orders || []).map(o => ({...o, session: s})));
   const ol = document.getElementById('dash-orders');
   if (!allOrders.length) { ol.innerHTML = '<div class="empty"><div class="empty-icon">🍽️</div><p>Sin pedidos activos</p></div>'; return; }
@@ -448,6 +497,22 @@ function renderDashboard() {
       <div class="order-price">${fmtR(mi.price * o.qty)}</div>
     </div>`;
   });
+}
+
+// Confirm a pending cash payment from the restaurant side
+function confirmCashPayment(sessionId, ref) {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => se.id === sessionId); if (!s) return;
+  const payment = (s.payments||[]).find(p => p.ref === ref); if (!payment) return;
+  payment.status = 'paid';
+  save();
+  renderDashboard();
+  if (currentDetailSession === sessionId) {
+    const updated = DB.sessions.find(se => se.id === sessionId);
+    if (updated) renderDetailPanel(updated);
+  }
+  const person = (s.participants||[]).find(p => p.id === payment.personId);
+  toast('✅ Pago en efectivo confirmado · ' + (person?.name || '') + ' · ' + fmtR(payment.amount));
 }
 
 // ─────────────────────────────────
@@ -497,7 +562,7 @@ function renderAllTables() {
         <div class="table-total">${fmtR(sessionTotal(s,DB.menu))}</div><div class="table-meta">${parts.length} personas</div>`;
     } else {
       div.className = 'table-card free';
-      div.onclick = () => { document.getElementById('nt-table-select').value = t.id; openNewTableModal(); };
+      div.onclick = () => openNewTableModal(t.id);
       div.innerHTML = `<div class="table-num">Mesa #${t.number}</div><div style="font-size:11px;color:var(--text3);margin-bottom:10px">○ Disponible</div><div style="font-size:12px;color:var(--text3)">Toca para activar</div>`;
     }
     allGrid.appendChild(div);
@@ -550,36 +615,80 @@ function renderDetailPanel(s) {
       <div class="order-price">${fmtR(mi.price * o.qty)}</div>
     </div>`;
   });
-  // Totals
+
+  // Totals — subtotal only (IVA included in prices, tip is optional)
   const grand = sessionTotal(s, DB.menu);
-  const paid = (s.payments||[]).filter(p => p.status==='paid').reduce((t,p) => t+p.amount, 0);
+  // Use baseAmount when available (set by new client payments), else fall back to full amount
+  const paid = (s.payments||[]).filter(p => p.status==='paid')
+    .reduce((t, p) => t + (p.baseAmount !== undefined ? p.baseAmount : p.amount), 0);
+  const tipPaid = (s.payments||[]).filter(p => p.status==='paid' && p.tipIncluded)
+    .reduce((t, p) => t + (p.tipAmount || 0), 0);
+  const pendingCashAmt = (s.payments||[]).filter(p => p.status==='pending_cash')
+    .reduce((t, p) => t + (p.baseAmount !== undefined ? p.baseAmount : p.amount), 0);
+
   document.getElementById('detail-grand-total').textContent = fmtR(grand);
-  document.getElementById('detail-total-meta').textContent = 'IVA ' + s.tax + '% · Propina ' + s.tip + '%';
+  document.getElementById('detail-total-meta').textContent =
+    'Propina sugerida ' + s.tip + '%' +
+    (tipPaid > 0 ? ' · Propina cobrada: ' + fmtR(tipPaid) : '');
   document.getElementById('detail-paid').textContent = fmtR(paid);
   document.getElementById('detail-due').textContent = fmtR(grand - paid);
+
   // Per person
   const pbEl = document.getElementById('pb-persons');
   pbEl.innerHTML = '';
   (s.participants||[]).forEach((p, i) => {
-    const {total} = calcPersonTotal(s, p.id, DB.menu);
-    const hasPaid = (s.payments||[]).some(pay => pay.personId === p.id && pay.status === 'paid');
-    const isProxy = p.isProxy ? `<span class="badge badge-cyan" style="margin-left:4px">Sin app</span>` : '';
+    const {total} = calcPersonTotal(s, p.id, DB.menu); // total = sub + transferred (no tip)
+
+    // Find direct payment or manager's payment (for proxies)
+    let payment = (s.payments||[]).find(pay => pay.personId === p.id && (pay.status==='paid' || pay.status==='pending_cash'));
+    if (!payment && p.isProxy && p.managedBy) {
+      payment = (s.payments||[]).find(pay => pay.personId === p.managedBy && (pay.status==='paid' || pay.status==='pending_cash'));
+    }
+
+    // Confirmed paid amount for this person (direct payments only, proxy amounts tracked via manager)
+    const confirmedPaid = p.isProxy ? 0 : (s.payments||[])
+      .filter(pay => pay.personId === p.id && pay.status === 'paid')
+      .reduce((t, pay) => t + (pay.baseAmount !== undefined ? pay.baseAmount : pay.amount), 0);
+
+    const coveredByManager = p.isProxy && p.managedBy && payment && payment.personId === p.managedBy;
+    // For proxies covered by manager, treat as fully paid if manager has confirmed payment
+    const effectivePaid = coveredByManager && payment?.status === 'paid' ? total : confirmedPaid;
+    const isFullyPaid = total <= 0.01 || effectivePaid >= total - 0.01;
+    const hasPartialPaid = confirmedPaid > 0 && !isFullyPaid;
+    const hasCashPending = payment?.status === 'pending_cash';
+    const remaining = Math.max(0, total - effectivePaid);
+
+    const isProxyBadge = p.isProxy ? `<span class="badge badge-cyan" style="margin-left:4px">Sin app</span>` : '';
     const manager = p.isProxy ? s.participants.find(m => m.id === p.managedBy) : null;
+
+    let statusBadge;
+    if (isFullyPaid && !hasCashPending) {
+      statusBadge = `<span class="badge badge-green" style="font-size:10px;display:inline-flex;margin-top:2px">✓ ${coveredByManager ? 'Cubierto por ' + (manager?.name || 'gestor') : 'Pagado' + (payment?.tipIncluded?' + propina':'')}</span>`;
+    } else if (hasCashPending) {
+      statusBadge = `<span class="badge badge-amber" style="font-size:10px;display:inline-flex;margin-top:2px">💵 ${coveredByManager ? 'Efectivo (gestor)' : 'Efectivo pendiente'}</span>
+        ${!coveredByManager ? `<button class="btn btn-success btn-sm" style="margin-left:6px;padding:2px 8px;font-size:11px" onclick="confirmCashPayment(${s.id},'${payment.ref}')">Confirmar</button>` : ''}`;
+    } else if (hasPartialPaid) {
+      statusBadge = `<span class="badge badge-blue" style="font-size:10px;display:inline-flex;margin-top:2px">⚠️ Pago parcial · Pendiente: ${fmtR(remaining)}</span>`;
+    } else {
+      statusBadge = `<span class="badge badge-amber" style="font-size:10px;display:inline-flex;margin-top:2px">Pendiente</span>`;
+    }
+
     pbEl.innerHTML += `<div class="pb-person">
       <div class="pb-av" style="background:${AV_COLORS[i%8]}">${initials(p.name)}</div>
       <div style="flex:1">
-        <div style="display:flex;align-items:center;gap:4px">
-          <div class="pb-name">${p.name}</div>${isProxy}
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+          <div class="pb-name">${p.name}</div>${isProxyBadge}
         </div>
         ${manager ? `<div style="font-size:11px;color:var(--cyan)">Gestionado por ${manager.name}</div>` : ''}
-        <span class="badge ${hasPaid?'badge-green':'badge-amber'}" style="font-size:10px;display:inline-flex;margin-top:2px">${hasPaid?'✓ Pagado':'Pendiente'}</span>
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:2px">${statusBadge}</div>
       </div>
-      <div class="pb-amount" style="${hasPaid?'color:var(--green)':''}">${fmtR(total)}</div>
+      <div class="pb-amount" style="${isFullyPaid&&!hasCashPending?'color:var(--green)':hasPartialPaid?'color:var(--blue)':''}">${fmtR(total)}</div>
       <button onclick="openRemoveGuestModal('${p.id}')" title="Quitar de la mesa"
         style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1;flex-shrink:0"
         onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">×</button>
     </div>`;
   });
+
   // Proxy guests button
   if (!document.getElementById('proxy-btn-inline')) {
     const box = document.getElementById('detail-breakdown');
@@ -596,7 +705,8 @@ function renderDetailPanel(s) {
 // ─────────────────────────────────
 // SESSIONS
 // ─────────────────────────────────
-function openNewTableModal() {
+function openNewTableModal(forTableId) {
+  if (forTableId !== undefined) preSelectedTableId = forTableId;
   DB = loadRestDB();
   const sel = document.getElementById('nt-table-select');
   sel.innerHTML = '';
@@ -607,6 +717,10 @@ function openNewTableModal() {
     }
   });
   if (!sel.options.length) { toast('⚠️ Todas las mesas están ocupadas'); return; }
+  if (preSelectedTableId != null) {
+    sel.value = preSelectedTableId;
+    preSelectedTableId = null;
+  }
   openModal('modal-new-table');
 }
 
@@ -632,7 +746,38 @@ function closeTableSession() {
   DB = loadRestDB();
   const s = DB.sessions.find(se => se.id === currentDetailSession);
   if (!s) return;
-  if (!confirm('¿Cerrar Mesa #' + s.tableNumber + '?')) return;
+
+  // Check for unpaid or partially paid participants
+  // Proxy guests are considered paid if their manager has fully paid
+  const unpaidPersons = (s.participants||[]).filter(p => {
+    const {total} = calcPersonTotal(s, p.id, DB.menu);
+    if (total <= 0.01) return false;
+
+    if (p.isProxy && p.managedBy) {
+      // Proxy: check if manager has a confirmed payment
+      const mgr = (s.payments||[]).find(pay => pay.personId === p.managedBy && pay.status === 'paid');
+      return !mgr;
+    }
+
+    // Regular participant: check confirmed paid amount vs current total
+    const paidSoFar = (s.payments||[])
+      .filter(pay => pay.personId === p.id && pay.status === 'paid')
+      .reduce((t, pay) => t + (pay.baseAmount !== undefined ? pay.baseAmount : pay.amount), 0);
+    return paidSoFar < total - 0.01;
+  });
+  const cashPending = (s.payments||[]).filter(p => p.status === 'pending_cash');
+
+  if (unpaidPersons.length > 0) {
+    toast('⚠️ No se puede cerrar: ' + unpaidPersons.map(p=>p.name).join(', ') + ' aún tienen saldo pendiente');
+    return;
+  }
+  if (cashPending.length > 0) {
+    toast('⚠️ Hay ' + cashPending.length + ' pago(s) en efectivo sin confirmar. Confírmalos antes de cerrar la mesa.');
+    return;
+  }
+
+  if (!confirm('✅ Todos los pagos completados.\n¿Confirmas el cierre de la Mesa #' + s.tableNumber + '?')) return;
+
   s.status = 'closed'; s.closedAt = new Date().toISOString();
   s.total = sessionTotal(s, DB.menu);
   DB.history.push({...s});
@@ -859,8 +1004,22 @@ function saveConfig() {
   DB.restaurant.address = document.getElementById('cfg-address').value.trim();
   DB.restaurant.tax = parseFloat(document.getElementById('cfg-tax').value) || 0;
   DB.restaurant.tip = parseFloat(document.getElementById('cfg-tip').value) || 0;
-  DB.restaurant.numTables = parseInt(document.getElementById('cfg-tables').value) || DB.restaurant.numTables;
-  save(); initApp(); toast('✅ Configuración guardada');
+  const newNumTables = parseInt(document.getElementById('cfg-tables').value) || DB.restaurant.numTables;
+
+  // Add new tables if count increased
+  const currentMax = DB.tables.length > 0 ? Math.max(...DB.tables.map(t => t.number)) : 0;
+  let added = 0;
+  if (newNumTables > currentMax) {
+    for (let i = currentMax + 1; i <= newNumTables; i++) {
+      DB.tables.push({ id: Date.now() + i, number: i, status: 'free' });
+      added++;
+    }
+  }
+  DB.restaurant.numTables = newNumTables;
+  save(); initApp();
+  toast(added > 0
+    ? '✅ Configuración guardada · ' + added + ' mesa(s) nueva(s) agregada(s)'
+    : '✅ Configuración guardada');
 }
 
 // ─────────────────────────────────
@@ -969,7 +1128,8 @@ function confirmRemoveGuest() {
         }
         return sum;
       }, 0);
-      totalIndividualDebt += indivSub * (1 + s.tax/100 + s.tip/100);
+      // IVA included in prices — no extra multiplication
+      totalIndividualDebt += indivSub;
     }
   });
   if (totalIndividualDebt > 0) {
