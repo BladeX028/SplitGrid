@@ -115,6 +115,7 @@
         <div class="section-header" style="margin-bottom:10px">
           <div class="section-title">Personas en la mesa</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="openClientOrderModal()">🍽️ Pedir</button>
             <button class="btn btn-ghost btn-sm" onclick="openProxyModal()">+ Sin app</button>
             <button class="btn btn-danger btn-sm" onclick="leaveTable()">← Salir</button>
           </div>
@@ -378,6 +379,42 @@
   </div>
 </div>
 
+<!-- ═══ MODAL: Agregar pedido (cliente) ═══ -->
+<div class="modal-overlay" id="modal-client-order">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">🍽️ Agregar pedido</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-client-order')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>¿Qué quieres pedir?</label>
+        <select id="cl-ao-item" onchange="_updateClientOrderPreview()"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>Cantidad</label>
+          <input type="number" id="cl-ao-qty" value="1" min="1" max="20"
+            style="text-align:center;font-size:18px;font-weight:700"
+            oninput="_updateClientOrderPreview()">
+        </div>
+        <div class="form-group" style="flex:2">
+          <label>Tipo</label>
+          <select id="cl-ao-type" onchange="_updateClientOrderPreview()">
+            <option value="individual">🙋 Solo para mí</option>
+            <option value="shared_all">🤝 Compartido (todos)</option>
+          </select>
+        </div>
+      </div>
+      <div id="cl-ao-preview" style="background:var(--bg4);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--text2);margin-top:4px;line-height:1.7"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-client-order')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:2" onclick="addClientOrder()">Agregar al pedido →</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ QR SCANNER OVERLAY ═══ -->
 <div id="qr-scanner-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.92);z-index:2000;flex-direction:column;align-items:center;justify-content:center;gap:20px">
   <div style="color:white;font-size:17px;font-weight:700;font-family:'Space Grotesk',sans-serif">Apunta al código QR de la mesa</div>
@@ -400,23 +437,27 @@
 <div class="modal-overlay" id="modal-dlocal-return">
   <div class="modal">
     <div class="modal-head">
-      <div class="modal-title">🌐 dLocal Go</div>
+      <div class="modal-title">🌐 Pago con dLocal Go</div>
       <button class="btn btn-ghost btn-sm" onclick="cancelDlocal()">✕</button>
     </div>
-    <div class="modal-body" style="text-align:center;padding:24px 20px">
-      <div style="font-size:48px;margin-bottom:12px">🌐</div>
-      <div id="dlocal-amount-label" style="font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:800;margin-bottom:8px"></div>
-      <p style="font-size:13px;color:var(--text2);margin-bottom:20px">
-        Completaste el pago en la pasarela dLocal Go.<br>
-        Si el pago fue exitoso, confirma aquí para notificar al restaurante.
-      </p>
+    <div class="modal-body" style="text-align:center;padding:20px">
+      <div style="width:64px;height:64px;background:linear-gradient(135deg,rgba(0,102,255,.2),rgba(0,200,150,.15));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 14px">🌐</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:2px">Total a pagar</div>
+      <div id="dlocal-amount-label" style="font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:800;letter-spacing:-1px;margin-bottom:2px"></div>
+      <div id="dlocal-currency-label" style="font-size:12px;color:var(--text3);margin-bottom:18px"></div>
+      <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:14px;text-align:left;font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+        <strong style="color:var(--text)">¿Cómo funciona?</strong><br>
+        1. Se abrió la pasarela dLocal Go en una nueva pestaña.<br>
+        2. Completa el pago allí con tarjeta u otro método.<br>
+        3. Cuando termines, vuelve aquí y confirma.
+      </div>
       <div style="background:var(--bg4);border-radius:var(--r);padding:10px 12px;font-size:12px;color:var(--text3)">
-        🔒 El restaurante verificará el cobro en su panel de dLocal antes de confirmar tu cuenta.
+        🔒 El restaurante verificará el cobro en su panel dLocal antes de liberar tu cuenta.
       </div>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" style="flex:1" onclick="cancelDlocal()">No pagué / Cancelar</button>
-      <button class="btn btn-primary" style="flex:1" onclick="confirmDlocalPayment()">✅ Sí, pagué →</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="cancelDlocal()">Cancelar</button>
+      <button class="btn btn-primary" style="flex:2" onclick="confirmDlocalPayment()">✅ Ya pagué →</button>
     </div>
   </div>
 </div>
@@ -856,6 +897,80 @@ async function addClientProxy() {
   closeModal('modal-proxy');
   renderMesa();
   toast('✅ ' + name + ' agregado — sus pagos los gestionas tú');
+}
+
+// ─────────────────────────────────
+// AGREGAR PEDIDO (cliente)
+// ─────────────────────────────────
+function openClientOrderModal() {
+  if (!CL.session) { toast('⚠️ Únete a una mesa primero'); return; }
+  const menu = _menu().filter(m => m.available !== false);
+  if (!menu.length) {
+    toast('⚠️ El menú no está disponible. Espera a que el restaurante lo configure.');
+    return;
+  }
+  const sel = document.getElementById('cl-ao-item');
+  sel.innerHTML = '';
+  menu.forEach(m => {
+    const op = document.createElement('option');
+    op.value = m.id;
+    op.textContent = m.emoji + ' ' + m.name + ' — ' + fmtC(m.price);
+    sel.appendChild(op);
+  });
+  document.getElementById('cl-ao-qty').value = 1;
+  document.getElementById('cl-ao-type').value = 'individual';
+  _updateClientOrderPreview();
+  openModal('modal-client-order');
+}
+
+function _updateClientOrderPreview() {
+  const sel = document.getElementById('cl-ao-item');
+  const qty = Math.max(1, parseInt(document.getElementById('cl-ao-qty').value) || 1);
+  const type = document.getElementById('cl-ao-type').value;
+  const menu = _menu();
+  const mi = menu.find(m => m.id === parseInt(sel?.value));
+  const prev = document.getElementById('cl-ao-preview');
+  if (!mi || !prev) return;
+  const s = _sess();
+  const nParts = s?.participants?.length || 1;
+  const total = mi.price * qty;
+  let html = `<strong>${mi.emoji} ${mi.name}</strong> × ${qty} = <strong>${fmtC(total)}</strong>`;
+  if (type === 'shared_all' && nParts > 1) {
+    html += `<br><span style="color:var(--text3)">÷ ${nParts} personas = <strong style="color:var(--blue)">${fmtC(total / nParts)}</strong> tu parte</span>`;
+  } else {
+    html += `<br><span style="color:var(--text3)">Se agrega a tu cuenta personal</span>`;
+  }
+  prev.innerHTML = html;
+}
+
+async function addClientOrder() {
+  if (!CL.session) return;
+  const s = _sess(); if (!s) return;
+  const menu = _menu();
+  const menuId = parseInt(document.getElementById('cl-ao-item').value);
+  const qty = Math.max(1, parseInt(document.getElementById('cl-ao-qty').value) || 1);
+  const type = document.getElementById('cl-ao-type').value;
+  const mi = menu.find(m => m.id === menuId);
+  if (!mi) { toast('⚠️ Item no válido'); return; }
+  const myId = CL.session.myId;
+  const myName = CL.session.myName;
+  const isShared = type === 'shared_all';
+  s.orders = s.orders || [];
+  s.orders.push({
+    id: Date.now(), menuItemId: menuId, qty,
+    type: isShared ? 'shared' : 'individual',
+    personId: myId, personName: myName,
+    sharedWith: isShared ? 'ALL' : null,
+  });
+  await _syncSession(s);
+  const restDB = loadRestDB();
+  if (restDB) {
+    const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
+    if (ls) { ls.orders = s.orders; saveRestDB(restDB); }
+  }
+  closeModal('modal-client-order');
+  renderMesa();
+  toast('✅ ' + mi.emoji + ' ' + mi.name + (isShared ? ' (compartido con todos)' : '') + ' agregado');
 }
 
 // ─────────────────────────────────
@@ -1310,11 +1425,16 @@ function _openDlocalPayment(grandMine) {
     _pendingPay = null;
     return;
   }
-  // Mostrar el monto en el modal de retorno
+  const c = COUNTRIES[CL.country] || COUNTRIES.CO;
+  // Pasar monto y moneda como parámetros — dLocal Go los usa para pre-llenar el formulario
+  const amountInt = Math.round(grandMine);
+  const sep = dlUrl.includes('?') ? '&' : '?';
+  const dlUrlFinal = `${dlUrl}${sep}amount=${amountInt}&currency=${c.currency}`;
+
   document.getElementById('dlocal-amount-label').textContent = fmtC(grandMine);
-  // Abrir dLocal en nueva pestaña
-  window.open(dlUrl, '_blank', 'noopener');
-  // Mostrar modal de confirmación de retorno
+  document.getElementById('dlocal-currency-label').textContent = c.currency;
+  // Abrir pasarela dLocal Go en nueva pestaña con el monto pre-llenado
+  window.open(dlUrlFinal, '_blank', 'noopener');
   openModal('modal-dlocal-return');
 }
 
