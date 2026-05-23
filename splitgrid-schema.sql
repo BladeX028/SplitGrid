@@ -61,11 +61,12 @@ CREATE TABLE country_payment_methods (
 );
 
 INSERT INTO country_payment_methods (country_code, sort_order, icon, name, sub) VALUES
-  ('CO', 1, '💙', 'Nequi',       'Pago instantáneo'),
-  ('CO', 2, '💚', 'Daviplata',   'Pago móvil'),
-  ('CO', 3, '🏦', 'PSE',         'Débito bancario'),
-  ('CO', 4, '💳', 'Tarjeta',     'Visa, Mastercard'),
-  ('CO', 5, '💵', 'Efectivo',    'Punto físico'),
+  ('CO', 1, '💙', 'Nequi',              'Código QR / número'),
+  ('CO', 2, '💚', 'Daviplata',          'Pago móvil'),
+  ('CO', 3, '🔐', 'Llave Bancolombia',  'App Bancolombia'),
+  ('CO', 4, '🏦', 'PSE',               'Débito bancario'),
+  ('CO', 5, '💳', 'Tarjeta',            'Débito / Crédito'),
+  ('CO', 6, '💵', 'Efectivo',           'Pago en caja'),
   ('BR', 1, '🟩', 'PIX',         'Pagamento instantâneo'),
   ('BR', 2, '📄', 'Boleto',      'Boleto bancário'),
   ('BR', 3, '💳', 'Cartão',      'Crédito / débito'),
@@ -385,7 +386,7 @@ CREATE TABLE IF NOT EXISTS sg_sessions (
   participants      JSONB        NOT NULL DEFAULT '[]'::jsonb,
   -- [{id, menuItemId, qty, type, personId?, personName?, sharedWith?}]
   orders            JSONB        NOT NULL DEFAULT '[]'::jsonb,
-  -- [{personId, method, amount, baseAmount, tipAmount, tipPct, tipIncluded, status, paidAt}]
+  -- [{personId, amount, baseAmount, tipAmount, tipPct, tipIncluded, method, status, ref, paidAt, confirmedAt?}]
   payments          JSONB        NOT NULL DEFAULT '[]'::jsonb,
   -- [{fromPersonId, fromPersonName, toPersonId, amount}]
   transferred_debts JSONB        NOT NULL DEFAULT '[]'::jsonb,
@@ -438,7 +439,9 @@ SELECT
   c.locale,
   COUNT(DISTINCT p.id)                    AS participant_count,
   COALESCE(SUM(o.unit_price * o.qty), 0) AS subtotal,
-  COALESCE(SUM(o.unit_price * o.qty), 0) * s.tip / 100 AS tip_amount
+  -- NOTA: tip_amount aquí es estimado máximo (subtotal × tip%). En la app,
+  -- la propina aplica solo al saldo pendiente de cada cliente (no al total).
+  COALESCE(SUM(o.unit_price * o.qty), 0) * s.tip / 100 AS estimated_tip_max
 FROM sessions s
 JOIN restaurants r ON r.id = s.restaurant_id
 JOIN countries   c ON c.code = r.country_code
