@@ -609,10 +609,22 @@ async function joinSession() {
   if (code.length !== 6) { toast('⚠️ El código debe tener 6 caracteres'); return; }
 
   // ── Intentar Supabase (cross-device) — dos intentos con pequeña espera ──
-  let sbSess = await sbGetSessionByCode(code).catch(() => null);
-  if (!sbSess) {
+  let sbSess = null;
+  let sbError = null;
+  try {
+    sbSess = await sbGetSessionByCode(code);
+  } catch(e) {
+    sbError = e.message;
+    console.error('joinSession SB error (intento 1):', e.message);
+  }
+  if (!sbSess && !sbError) {
     await new Promise(r => setTimeout(r, 1500));
-    sbSess = await sbGetSessionByCode(code).catch(() => null);
+    try {
+      sbSess = await sbGetSessionByCode(code);
+    } catch(e) {
+      sbError = e.message;
+      console.error('joinSession SB error (intento 2):', e.message);
+    }
   }
   if (sbSess) {
     await _joinViaSB(sbSess, code, name);
@@ -620,8 +632,16 @@ async function joinSession() {
   }
 
   // ── Fallback: mismo dispositivo (localStorage) ──
+  // Los errores de Supabase no bloquean el fallback local
   const restDB = loadRestDB();
-  if (!restDB) { toast('⚠️ Código no encontrado. Verifica que la mesa esté abierta e intenta de nuevo.'); return; }
+  if (!restDB) {
+    if (sbError) {
+      toast('⚠️ Error de conexión con el servidor: ' + sbError, 5000);
+    } else {
+      toast('⚠️ Código no encontrado. Verifica que la mesa esté abierta e intenta de nuevo.');
+    }
+    return;
+  }
   const s = restDB.sessions.find(se => (se.status==='occupied'||se.status==='paying') && se.joinCode === code);
   if (!s) { toast('⚠️ Código inválido o sesión cerrada'); return; }
   const pmap = JSON.parse(localStorage.getItem('sg_pmap') || '{}');
