@@ -561,6 +561,12 @@ function _startRestApp() {
   document.getElementById('app').style.display = '';
   initApp();
   hydrateFromSupabase();
+  sbCheckSetup().then(err => {
+    if (err) setTimeout(() => toast(
+      '⚠️ Supabase no configurado (' + err + '). Ejecuta supabase-migration.sql en el dashboard. El código QR solo funcionará en este dispositivo.',
+      10000
+    ), 1000);
+  });
 }
 
 // Auth guard
@@ -950,7 +956,11 @@ async function createSession() {
       participants: [], orders: [], payments: [], transferred_debts: [],
       opened_at: s.openedAt, closed_at: null,
     }, { onConflict: 'id' });
-    if (sessErr) console.warn('createSession sync error:', sessErr.message);
+    if (sessErr) {
+      console.warn('createSession sync error:', sessErr.message);
+      // Mostrar aviso visible: el código QR solo funcionará en este mismo dispositivo
+      setTimeout(() => toast('⚠️ Sin sincronización en la nube: ' + sessErr.message + ' — el código solo funciona en este dispositivo', 6000), 2500);
+    }
   }
   closeModal('modal-new-table');
   toast('✅ Mesa #' + table.number + ' abierta · Código: ' + s.joinCode);
