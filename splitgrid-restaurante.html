@@ -1500,7 +1500,7 @@ function closeMobileSidebar() {
   document.getElementById('sidebar-backdrop').classList.remove('open');
 }
 
-if (DB && DB._loggedIn) { initApp(); hydrateFromSupabase(); }
+if (DB && DB._loggedIn) { _startRestApp(); } else { _showRestAuth(); }
 </script>
 </body>
 </html>
