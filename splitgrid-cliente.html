@@ -608,8 +608,12 @@ async function joinSession() {
   const name = document.getElementById('join-name').value.trim() || CL.user?.name || 'Invitado';
   if (code.length !== 6) { toast('⚠️ El código debe tener 6 caracteres'); return; }
 
-  // ── Intentar Supabase primero (cross-device) ──
-  const sbSess = await sbGetSessionByCode(code).catch(() => null);
+  // ── Intentar Supabase (cross-device) — dos intentos con pequeña espera ──
+  let sbSess = await sbGetSessionByCode(code).catch(() => null);
+  if (!sbSess) {
+    await new Promise(r => setTimeout(r, 1500));
+    sbSess = await sbGetSessionByCode(code).catch(() => null);
+  }
   if (sbSess) {
     await _joinViaSB(sbSess, code, name);
     return;
