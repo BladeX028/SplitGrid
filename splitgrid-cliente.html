@@ -335,8 +335,8 @@
             </div>
           </div>
           <div class="form-group">
-            <label>País (detectado automáticamente por tu ubicación)</label>
-            <div id="perfil-country-display" style="background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:9px 12px;font-size:13.5px;color:var(--text2)">—</div>
+            <label>País</label>
+            <div id="perfil-country-display" style="background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:9px 12px;font-size:13.5px;color:var(--text2)">🇨🇴 Colombia (COP)</div>
           </div>
           <!-- Login button para invitados -->
           <div id="guest-login-section" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
@@ -467,7 +467,7 @@ function clGuestLogin() {
   const name = document.getElementById('cl-guest-name').value.trim();
   if (!name) { const e=document.getElementById('cl-auth-error'); e.textContent='Ingresa tu nombre para continuar'; e.style.display='block'; return; }
   CL.user = { id:'guest_'+Date.now(), name, email:null, isGuest:true };
-  CL.country = detectCountry();
+  CL.country = 'CO';
   saveC();
   _hideClAuth();
   launchApp();
@@ -480,7 +480,7 @@ function clEmailLogin() {
   if (pass.length < 6) { e.textContent='Contraseña muy corta (mín. 6 caracteres)'; e.style.display='block'; return; }
   e.style.display = 'none';
   CL.user = { id:'user_'+Date.now(), name:email.split('@')[0], email, isGuest:false };
-  CL.country = detectCountry();
+  CL.country = 'CO';
   saveC();
   _hideClAuth();
   launchApp();
@@ -488,7 +488,7 @@ function clEmailLogin() {
 if (!CL.user) { _showClAuth(); }
 
 function saveC() { saveClientState(CL); }
-function fmtC(n) { return fmt(n, CL.country); }
+function fmtC(n) { return fmt(n); }
 
 // ── Helpers para modo cross-device (Supabase) ──
 // Devuelve la sesión activa: primero desde Supabase (CL._liveSession), luego localStorage
@@ -522,7 +522,7 @@ async function _syncSession(updatedSession) {
 function doLogout() {
   if (!confirm('¿Cerrar sesión?')) return;
   sbUnsubscribeAll();
-  CL = { user: null, country: detectCountry(), session: null, payments: [], menu: [] };
+  CL = { user: null, country: 'CO', session: null, payments: [], menu: [] };
   saveC();
   document.getElementById('app').style.display = 'none';
   _showClAuth();
@@ -544,9 +544,8 @@ function launchApp() {
   // Show login section in profile for guests
   const guestLoginSection = document.getElementById('guest-login-section');
   if (guestLoginSection) guestLoginSection.style.display = u.isGuest ? 'block' : 'none';
-  const c = COUNTRIES[CL.country] || COUNTRIES.CO;
-  document.getElementById('topbar-currency').textContent = c.flag + ' ' + c.currency;
-  document.getElementById('perfil-country-display').textContent = c.flag + ' ' + c.name + ' (' + c.currency + ') — detectado automáticamente';
+  document.getElementById('topbar-currency').textContent = '🇨🇴 COP';
+  document.getElementById('perfil-country-display').textContent = '🇨🇴 Colombia (COP)';
   if (document.getElementById('join-name')) document.getElementById('join-name').value = u.name;
   renderMesa(); renderPago(); renderHistory();
 
@@ -646,7 +645,7 @@ async function joinSession() {
     restaurantName: restDB.restaurant.name, myName: name, myId,
     tax: s.tax, tip: s.tip,
   };
-  CL.country = restDB.restaurant.country || CL.country;
+  CL.country = 'CO';
   saveC();
   document.getElementById('sidebar-sub').textContent = 'Mesa #' + s.tableNumber + ' · Activa';
   document.getElementById('live-indicator').style.display = 'flex';
@@ -667,15 +666,13 @@ async function _joinViaSB(s, code, name) {
   // Cargar datos del restaurante (menú, nombre, país)
   const restData = await sbLoadRestaurant(s.restaurantId || '').catch(() => null);
   const restaurantName = restData?.restaurant?.name || 'Restaurante';
-  const restaurantCountry = restData?.restaurant?.country || CL.country;
-
   CL.session = {
     sessionId: s.id, joinCode: code, tableNumber: s.tableNumber,
     restaurantName, myName: name, myId,
     restaurantId: s.restaurantId,
     tax: s.tax, tip: s.tip,
   };
-  CL.country = restaurantCountry;
+  CL.country = 'CO';
   CL.menu = restData?.menu || [];
   CL.paymentAccounts = restData?.restaurant?.paymentAccounts || {};
   CL.dlocalUrl = restData?.restaurant?.dlocalUrl || '';
@@ -877,7 +874,7 @@ function renderMesa() {
       <div class="restaurant-icon">🪑</div>
       <div>
         <div style="font-weight:600;font-size:16px">Mesa #${s.tableNumber} · ${CL.session.restaurantName}</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:2px">${COUNTRIES[CL.country]?.flag||''} ${COUNTRIES[CL.country]?.name||''} · ${elapsedMin(s.openedAt)} min activa</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">🇨🇴 Colombia · ${elapsedMin(s.openedAt)} min activa</div>
       </div>
     </div>
     <div class="stat-pills">
@@ -970,7 +967,7 @@ function renderMesa() {
 
   document.getElementById('my-total').textContent = fmtC(grandMine);
   const tipLabel = currentRestTip > 0 ? (includeTip ? ` · Propina ${selectedTipPct}% (sobre saldo pendiente)` : ' · Sin propina') : '';
-  document.getElementById('my-total-meta').textContent = (COUNTRIES[CL.country]?.currency||'COP') + tipLabel;
+  document.getElementById('my-total-meta').textContent = 'COP' + tipLabel;
   document.getElementById('my-paid').textContent = fmtC(paidSoFar);
   document.getElementById('my-due').textContent = fmtC(dueAmt);
 
@@ -1065,12 +1062,11 @@ function renderPago() {
   const s = _sess(); if (!s) return;
   const menu = _menu();
   const restDB = loadRestDB();
-  const c = COUNTRIES[CL.country] || COUNTRIES.CO;
-  document.getElementById('pago-country-badge').textContent = c.flag + ' ' + c.currency;
+  document.getElementById('pago-country-badge').textContent = '🇨🇴 COP';
   // Methods
   const DLOCAL_IDX = 99;
   const ml = document.getElementById('payment-methods-list'); ml.innerHTML = '';
-  c.methods.forEach((m, i) => {
+  COUNTRIES.CO.methods.forEach((m, i) => {
     const div = document.createElement('div');
     div.className = 'method-card' + (i===selectedMethod?' selected':'');
     div.innerHTML = `<div class="m-icon" style="background:${m.bg}">${m.icon}</div><div><div class="m-name">${m.name}</div><div class="m-sub">${m.sub}</div></div><div class="m-radio"></div>`;
@@ -1121,7 +1117,7 @@ function renderPago() {
     pagoPersonalRow.style.display = 'none';
   }
   document.getElementById('pago-amount-big').textContent = fmtC(grandMine);
-  document.getElementById('pago-amount-sub').textContent = c.currency + ' · ' + CL.session.myName + ' · Mesa #' + s.tableNumber;
+  document.getElementById('pago-amount-sub').textContent = 'COP · ' + CL.session.myName + ' · Mesa #' + s.tableNumber;
 
   // Pay button state
   const payNowBtn = document.getElementById('pay-now-btn');
@@ -1207,11 +1203,10 @@ async function processPayment() {
   const grandMine = baseAmount + tipAmount;
 
   const DLOCAL_IDX = 99;
-  const c = COUNTRIES[CL.country] || COUNTRIES.CO;
   const isDlocal = selectedMethod === DLOCAL_IDX;
   const methodObj = isDlocal
     ? { name: 'dLocal Go', icon: '🌐', sub: 'Pasarela de pagos' }
-    : (c.methods[selectedMethod] || { name: '?', icon: '💳', sub: '' });
+    : (COUNTRIES.CO.methods[selectedMethod] || { name: '?', icon: '💳', sub: '' });
   const isCash = methodObj.name === 'Efectivo' || methodObj.name === 'Boleto';
   const ref = 'SGR-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random()*999999)).padStart(6,'0');
 
@@ -1374,8 +1369,7 @@ function renderHistory() {
   document.getElementById('hist-total').textContent = fmtC(total);
   document.getElementById('hist-count').textContent = payments.length;
   document.getElementById('hist-avg').textContent = fmtC(avg);
-  const c = COUNTRIES[CL.country];
-  document.getElementById('hist-currency').textContent = c?.currency || 'COP';
+  document.getElementById('hist-currency').textContent = 'COP';
   const list = document.getElementById('hist-list');
   if (!payments.length) { list.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>Sin historial aún</p></div>'; return; }
   list.innerHTML = '';
