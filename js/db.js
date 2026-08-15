@@ -136,7 +136,10 @@ async function sbGetSessionByCode(code) {
     .eq('join_code', code.toUpperCase())
     .in('status', ['occupied', 'paying'])
     .maybeSingle();
-  if (error) { console.warn('sbGetSessionByCode:', error.message); return null; }
+  if (error) {
+    console.warn('sbGetSessionByCode:', error.message);
+    throw new Error(error.message);
+  }
   return data ? _rowToSession(data) : null;
 }
 
@@ -231,4 +234,18 @@ function sbSubscribeSession(sessionId, onChange) {
 function sbUnsubscribeAll() {
   Object.values(_sbCh).forEach(ch => _sb.removeChannel(ch));
   Object.keys(_sbCh).forEach(k => delete _sbCh[k]);
+}
+
+// ── DIAGNÓSTICO DE SETUP ────────────────────────────────────────
+
+// Verifica que las tablas Supabase existen y son accesibles.
+// Retorna null si todo está bien, o el mensaje de error si algo falla.
+async function sbCheckSetup() {
+  try {
+    const { error } = await _sb.from('sg_restaurants').select('id').limit(1);
+    if (error) return error.message;
+    return null;
+  } catch(e) {
+    return e.message;
+  }
 }

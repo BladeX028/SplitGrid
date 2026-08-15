@@ -60,6 +60,14 @@ ALTER TABLE sg_restaurants DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sg_sessions    DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sg_history     DISABLE ROW LEVEL SECURITY;
 
--- ── Habilitar Realtime en sesiones ──
+-- ── Habilitar Realtime en sesiones (seguro en re-ejecuciones) ──
 -- Permite que el cliente reciba actualizaciones del restaurante en tiempo real
-ALTER PUBLICATION supabase_realtime ADD TABLE sg_sessions;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'sg_sessions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE sg_sessions;
+  END IF;
+END $$;
