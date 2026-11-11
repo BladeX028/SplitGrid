@@ -536,12 +536,51 @@ function fmtC(n) { return fmt(n); }
 function _sess() {
   if (CL._liveSession) return CL._liveSession;
   if (!CL.session) return null;
-  return loadRestDB()?.sessions?.find(se => se.id === CL.session.sessionId) || null;
+  return _localRestForSession()?.sessions?.find(se => se.id === CL.session.sessionId) || null;
 }
-// Devuelve el menú: primero del cache del cliente (cross-device), luego del restaurante local
+// Restaurante guardado en este navegador, solo si es el MISMO de la mesa a la que se unió el cliente
+function _localRestForSession() {
+  const local = loadRestDB();
+  if (!local) return null;
+  const rid = CL.session?.restaurantId;
+  if (rid && local._loginEmail !== rid) return null; // es otro restaurante: no mezclar menús
+  return local;
+}
+// Devuelve el menú del restaurante de la mesa actual
 function _menu() {
-  const local = loadRestDB()?.menu;
+  const local = _localRestForSession()?.menu;
   return (local?.length ? local : null) || CL.menu || [];
+}
+// Menú + sesiones abiertas del restaurante, lo más actualizados posible (para validar inventario)
+let _stockCtx = null;
+async function _loadStockContext() {
+  const cur = _sess();
+  const merge = list => {
+    const out = (list || []).filter(x => !cur || String(x.id) !== String(cur.id));
+    if (cur) out.push(cur);
+    return out;
+  };
+  const local = _localRestForSession();
+  if (local) {
+    _stockCtx = { menu: local.menu || [], sessions: merge(local.sessions) };
+    return _stockCtx;
+  }
+  const rid = CL.session?.restaurantId;
+  let sessions = [];
+  if (rid) {
+    try {
+      const [rest, remote] = await Promise.all([sbLoadRestaurant(rid), sbLoadSessions(rid)]);
+      if (rest?.menu) { CL.menu = rest.menu; saveC(); }
+      sessions = remote || [];
+    } catch(e) { console.warn('_loadStockContext:', e); }
+  }
+  _stockCtx = { menu: CL.menu || [], sessions: merge(sessions) };
+  return _stockCtx;
+}
+function _noStockMsg(mi, avail) {
+  return avail <= 0
+    ? '⚠️ ' + mi.name + ' no está disponible en este momento. Consulta con el restaurante su disponibilidad.'
+    : '⚠️ Solo hay ' + avail + ' unidad(es) disponibles de ' + mi.name + '. Consulta con el restaurante si necesitas más.';
 }
 // Persiste cambios en la sesión: en Supabase (cross-device) o localStorage (mismo dispositivo)
 async function _syncSession(updatedSession) {
@@ -704,8 +743,10 @@ async function joinSession() {
   CL.session = {
     sessionId: s.id, joinCode: code, tableNumber: s.tableNumber,
     restaurantName: restDB.restaurant.name, myName: name, myId,
+    restaurantId: restDB._loginEmail,
     tax: s.tax, tip: s.tip,
   };
+  CL.menu = restDB.menu || [];
   CL.country = 'CO';
   saveC();
   document.getElementById('sidebar-sub').textContent = 'Mesa #' + s.tableNumber + ' · Activa';
@@ -886,7 +927,7 @@ async function addClientProxy() {
   s.participants.push(newPerson);
   // Sync to Supabase (cross-device) and localStorage (same-device)
   await _syncSession(s);
-  const restDB = loadRestDB();
+  const restDB = _localRestForSession();
   if (restDB) {
     const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
     if (ls) { ls.participants = s.participants; saveRestDB(restDB); }
@@ -899,9 +940,10 @@ async function addClientProxy() {
 // ─────────────────────────────────
 // AGREGAR PEDIDO (cliente)
 // ─────────────────────────────────
-function openClientOrderModal() {
+async function openClientOrderModal() {
   if (!CL.session) { toast('⚠️ Únete a una mesa primero'); return; }
-  const menu = _menu().filter(m => m.available !== false);
+  const ctx = await _loadStockContext();
+  const menu = ctx.menu.filter(m => m.available !== false);
   if (!menu.length) {
     toast('⚠️ El menú no está disponible. Espera a que el restaurante lo configure.');
     return;
@@ -909,12 +951,21 @@ function openClientOrderModal() {
   const sel = document.getElementById('cl-ao-item');
   sel.innerHTML = '';
   menu.forEach(m => {
+    const avail = availableQty(m, ctx.sessions);
     const op = document.createElement('option');
     op.value = m.id;
-    op.textContent = m.emoji + ' ' + m.name + ' — ' + fmtC(m.price);
+    op.textContent = m.emoji + ' ' + m.name + ' — ' + fmtC(m.price) + (avail <= 0 ? ' · No disponible' : '');
+    if (avail <= 0) op.disabled = true;
     sel.appendChild(op);
   });
+  const firstOk = [...sel.options].find(o => !o.disabled);
+  if (!firstOk) {
+    toast('⚠️ Por ahora no hay platos disponibles. Consulta con el restaurante.', 5000);
+    return;
+  }
+  sel.value = firstOk.value;
   document.getElementById('cl-ao-qty').value = 1;
+  document.getElementById('cl-ao-qty').max = MAX_QTY_PER_ORDER;
   document.getElementById('cl-ao-type').value = 'individual';
   _updateClientOrderPreview();
   openModal('modal-client-order');
@@ -937,18 +988,38 @@ function _updateClientOrderPreview() {
   } else {
     html += `<br><span style="color:var(--text3)">Se agrega a tu cuenta personal</span>`;
   }
+  // Aviso de disponibilidad en vivo
+  const avail = availableQty(mi, _stockCtx?.sessions || [s].filter(Boolean));
+  const limit = Math.min(avail, MAX_QTY_PER_ORDER);
+  if (qty > limit) {
+    const msg = qty > avail ? _noStockMsg(mi, avail)
+      : '⚠️ Máximo ' + MAX_QTY_PER_ORDER + ' unidades por pedido. Para cantidades mayores consulta con el restaurante.';
+    html += `<br><span style="color:var(--red);font-weight:600">${msg}</span>`;
+  }
   prev.innerHTML = html;
 }
 
 async function addClientOrder() {
   if (!CL.session) return;
-  const s = _sess(); if (!s) return;
-  const menu = _menu();
+  if (!_sess()) return;
   const menuId = parseInt(document.getElementById('cl-ao-item').value);
   const qty = Math.max(1, parseInt(document.getElementById('cl-ao-qty').value) || 1);
   const type = document.getElementById('cl-ao-type').value;
-  const mi = menu.find(m => m.id === menuId);
-  if (!mi) { toast('⚠️ Item no válido'); return; }
+  if (qty > MAX_QTY_PER_ORDER) {
+    toast('⚠️ Máximo ' + MAX_QTY_PER_ORDER + ' unidades por pedido. Para cantidades mayores consulta con el restaurante.', 5000);
+    return;
+  }
+  // Revalidar inventario con datos frescos justo antes de agregar
+  const ctx = await _loadStockContext();
+  const s = _sess(); if (!s) return;
+  const mi = ctx.menu.find(m => m.id === menuId);
+  if (!mi || mi.available === false) { toast('⚠️ Este plato ya no está disponible. Consulta con el restaurante.'); return; }
+  const avail = availableQty(mi, ctx.sessions);
+  if (qty > avail) {
+    toast(_noStockMsg(mi, avail), 6000);
+    _updateClientOrderPreview();
+    return;
+  }
   const myId = CL.session.myId;
   const myName = CL.session.myName;
   const isShared = type === 'shared_all';
@@ -960,7 +1031,7 @@ async function addClientOrder() {
     sharedWith: isShared ? 'ALL' : null,
   });
   await _syncSession(s);
-  const restDB = loadRestDB();
+  const restDB = _localRestForSession();
   if (restDB) {
     const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
     if (ls) { ls.orders = s.orders; saveRestDB(restDB); }
@@ -981,7 +1052,7 @@ function renderMesa() {
   const s = _sess();
   const menu = _menu();
   if (!s) { CL.session = null; saveC(); renderMesa(); return; }
-  const restDB = loadRestDB(); // puede ser null en cross-device, usar solo para restaurante local
+  const restDB = _localRestForSession(); // puede ser null en cross-device, usar solo para restaurante local
 
   // Detect cash payments confirmed by restaurant → add to history and notify client
   const myId_early = CL.session.myId;
@@ -1196,7 +1267,7 @@ function renderPago() {
   noSes.style.display='none'; actSes.style.display='block';
   const s = _sess(); if (!s) return;
   const menu = _menu();
-  const restDB = loadRestDB();
+  const restDB = _localRestForSession();
   document.getElementById('pago-country-badge').textContent = '🇨🇴 COP';
   // Methods
   const DLOCAL_IDX = 99;
@@ -1209,7 +1280,7 @@ function renderPago() {
     ml.appendChild(div);
   });
   // dLocal Go — aparece solo si el restaurante lo configuró
-  const dlUrl = CL.dlocalUrl || loadRestDB()?.restaurant?.dlocalUrl || '';
+  const dlUrl = CL.dlocalUrl || _localRestForSession()?.restaurant?.dlocalUrl || '';
   if (dlUrl) {
     const dl = document.createElement('div');
     dl.className = 'method-card' + (selectedMethod===DLOCAL_IDX?' selected':'');
@@ -1365,7 +1436,7 @@ async function processPayment() {
 }
 
 function _showPaymentInstructions(methodObj, baseAmount, grandMine, tipAmount) {
-  const restDB = loadRestDB();
+  const restDB = _localRestForSession();
   // Obtener cuentas: primero del cliente (cross-device), luego del restaurante local
   const accounts = CL.paymentAccounts || restDB?.restaurant?.paymentAccounts || {};
   const account = accounts[methodObj.name] || '';
@@ -1414,7 +1485,7 @@ function cancelPayInstructions() {
 
 // ─── dLocal Go ───────────────────
 function _openDlocalPayment(grandMine) {
-  const dlUrl = CL.dlocalUrl || loadRestDB()?.restaurant?.dlocalUrl || '';
+  const dlUrl = CL.dlocalUrl || _localRestForSession()?.restaurant?.dlocalUrl || '';
   if (!dlUrl) {
     toast('⚠️ El restaurante no ha configurado dLocal Go');
     _pendingPay = null;
@@ -1459,7 +1530,7 @@ async function submitPaymentInstructions() {
 
 async function _registerPayment({ s, baseAmount, tipAmount, grandMine, methodObj, ref, proxyBase, paidSoFar }, status) {
   const myId = CL.session.myId;
-  const restDB = loadRestDB();
+  const restDB = _localRestForSession();
   s.payments = s.payments || [];
   s.payments.push({
     personId:    myId,

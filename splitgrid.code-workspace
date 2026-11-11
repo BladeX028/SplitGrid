@@ -21,7 +21,9 @@
     },
     "editor.quickSuggestions": {
       "strings": true
-    }
+    },
+    "vscode-pets.disableEffects": true,
+    "vscode-pets.throwBallWithMouse": true
   },
   "extensions": {
     "recommendations": [
@@ -34,7 +36,8 @@
       "mtxr.sqltools",
       "bradlc.vscode-tailwindcss",
       "christian-kohler.path-intellisense",
-      "naumovs.color-highlight"
+      "naumovs.color-highlight",
+      "tonybaloney.vscode-pets"
     ]
   }
 }

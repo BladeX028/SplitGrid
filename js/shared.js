@@ -77,6 +77,40 @@ function toast(msg, dur = 2800) {
 function openModal(id) { document.getElementById(id)?.classList.add('open'); }
 function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
 
+// ── INVENTARIO ──
+// m.stock = unidades en inventario que el restaurante define (null/undefined = sin límite).
+// Los pedidos de mesas abiertas "reservan" unidades; al cerrar la mesa se descuentan del stock.
+const MAX_QTY_PER_ORDER = 20; // tope de seguridad por pedido desde la app del cliente
+
+function hasStock(m) {
+  return !!m && m.stock !== null && m.stock !== undefined && m.stock !== '' && !isNaN(m.stock);
+}
+function reservedQty(sessions, menuItemId) {
+  return (sessions || [])
+    .filter(s => s && (s.status === 'occupied' || s.status === 'paying'))
+    .reduce((t, s) => t + (s.orders || [])
+      .filter(o => o.menuItemId === menuItemId)
+      .reduce((a, o) => a + (Number(o.qty) || 0), 0), 0);
+}
+// Unidades disponibles para pedir ahora (Infinity si el plato no maneja inventario)
+function availableQty(m, sessions) {
+  if (!hasStock(m)) return Infinity;
+  return Math.max(0, Number(m.stock) - reservedQty(sessions, m.id));
+}
+// Descuenta del inventario lo consumido en una sesión que se cierra
+function consumeStock(menu, session) {
+  (session.orders || []).forEach(o => {
+    const mi = (menu || []).find(m => m.id === o.menuItemId);
+    if (hasStock(mi)) mi.stock = Math.max(0, Number(mi.stock) - (Number(o.qty) || 0));
+  });
+}
+function parseStockInput(val) {
+  const v = String(val ?? '').trim();
+  if (v === '') return null;
+  const n = parseInt(v, 10);
+  return isNaN(n) || n < 0 ? NaN : n;
+}
+
 // ── SESSION MATH ──
 function sessionSubtotal(s, menu) {
   return (s.orders || []).reduce((t, o) => {

@@ -408,10 +408,33 @@
           </select>
         </div>
       </div>
+      <div class="form-group">
+        <label>Inventario (unidades disponibles)</label>
+        <input type="number" id="am-stock" placeholder="Vacío = sin límite" min="0" step="1">
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-add-menu')">Cancelar</button>
       <button class="btn btn-primary" style="flex:1" onclick="addMenuItem()">Agregar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: Editar inventario de un plato ═══ -->
+<div class="modal-overlay" id="modal-edit-stock">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title" id="es-title">Inventario</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-edit-stock')">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Unidades en inventario</label>
+        <input type="number" id="es-stock" placeholder="Vacío = sin límite" min="0" step="1"
+          style="text-align:center;font-size:18px;font-weight:700">
+      </div>
+      <div id="es-info" style="font-size:12px;color:var(--text3);line-height:1.6"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-edit-stock')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveMenuStock()">Guardar</button>
     </div>
   </div>
 </div>
@@ -468,15 +491,8 @@ let preSelectedTableId = null;
 // AUTH
 // ─────────────────────────────────
 function _buildDefaultRestDB(email, name) {
-  const menu = [
-    {id:1,name:'Bandeja Paisa',emoji:'🍛',price:42000,cat:'Platos Fuertes',available:true},
-    {id:2,name:'Ajiaco Bogotano',emoji:'🍜',price:35000,cat:'Platos Fuertes',available:true},
-    {id:3,name:'Picada Mixta',emoji:'🥩',price:74000,cat:'Compartidos',available:true},
-    {id:4,name:'Patacones',emoji:'🍟',price:12000,cat:'Entradas',available:true},
-    {id:5,name:'Aguapanela',emoji:'🍵',price:8000,cat:'Bebidas',available:true},
-    {id:6,name:'Cerveza Artesanal',emoji:'🍺',price:14000,cat:'Bebidas',available:true},
-    {id:7,name:'Tres Leches',emoji:'🍰',price:18000,cat:'Postres',available:true},
-  ];
+  // Cuenta nueva = menú vacío; el restaurante agrega sus propios platos
+  const menu = [];
   return {
     _loggedIn: true, _loginEmail: email,
     restaurant: { name: name || 'Mi Restaurante', address: '', country: 'CO', tax: 19, tip: 10, numTables: 10, paymentAccounts: {}, dlocalUrl: '' },
@@ -993,10 +1009,16 @@ function closeTableSession() {
 
   s.status = 'closed'; s.closedAt = new Date().toISOString();
   s.total = sessionTotal(s, DB.menu);
+  consumeStock(DB.menu, s); // lo pedido en la mesa sale definitivamente del inventario
   DB.history.push({...s});
   DB.sessions = DB.sessions.filter(se => se.id !== s.id);
   const t = DB.tables.find(tb => tb.id === s.tableId); if (t) t.status = 'free';
   save();
+  // Marcar la sesión como cerrada en la nube (si no, seguiría contando como mesa abierta)
+  if (DB._loginEmail) {
+    sbUpdateSessionFields(String(s.id), { status: 'closed', closedAt: s.closedAt }).catch(() => {});
+    sbSaveHistoryEntry(DB._loginEmail, s).catch(() => {});
+  }
   toast('✅ Mesa #' + s.tableNumber + ' cerrada · Total: ' + fmtR(s.total));
   showPanel('mesas'); renderDashboard();
 }
@@ -1009,9 +1031,14 @@ function openAddOrderModal() {
   const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
   const sel = document.getElementById('ao-item'); sel.innerHTML = '';
   DB.menu.filter(m => m.available).forEach(m => {
+    const avail = availableQty(m, DB.sessions);
     const op = document.createElement('option'); op.value = m.id;
-    op.textContent = m.emoji + ' ' + m.name + ' — ' + fmtR(m.price); sel.appendChild(op);
+    op.textContent = m.emoji + ' ' + m.name + ' — ' + fmtR(m.price) +
+      (hasStock(m) ? (avail > 0 ? ' · ' + avail + ' disp.' : ' · Agotado') : '');
+    if (avail <= 0) op.disabled = true;
+    sel.appendChild(op);
   });
+  const firstOk = [...sel.options].find(o => !o.disabled); if (firstOk) sel.value = firstOk.value;
   const ps = document.getElementById('ao-person'); ps.innerHTML = '';
   s.participants.forEach(p => {
     const op = document.createElement('option'); op.value = p.id; op.textContent = p.name; ps.appendChild(op);
@@ -1084,8 +1111,17 @@ function addOrder() {
   DB = loadRestDB();
   const s = DB.sessions.find(se => se.id === currentDetailSession); if (!s) return;
   const menuId = parseInt(document.getElementById('ao-item').value);
-  const qty = parseInt(document.getElementById('ao-qty').value) || 1;
+  const qty = Math.max(1, parseInt(document.getElementById('ao-qty').value) || 1);
   const type = document.getElementById('ao-type').value;
+  const miCheck = DB.menu.find(m => m.id === menuId);
+  if (!miCheck) { toast('⚠️ Selecciona un item del menú'); return; }
+  const avail = availableQty(miCheck, DB.sessions);
+  if (qty > avail) {
+    toast(avail <= 0
+      ? '⚠️ ' + miCheck.name + ' está agotado. Actualiza el inventario en Menú.'
+      : '⚠️ Solo quedan ' + avail + ' unidad(es) de ' + miCheck.name + '. Actualiza el inventario en Menú si tienes más.', 5000);
+    return;
+  }
   const personId = document.getElementById('ao-person').value;
   const person = s.participants.find(p => p.id === personId);
   let sharedWith = null, personName = person ? person.name : 'Staff';
@@ -1146,11 +1182,21 @@ function renderMenu() {
   const filtered = currentMenuCat === 'Todos' ? DB.menu : DB.menu.filter(m => m.cat === currentMenuCat);
   const grid = document.getElementById('menu-grid'); grid.innerHTML = '';
   filtered.forEach(m => {
+    const avail = availableQty(m, DB.sessions);
+    const soldOut = !m.available || avail <= 0;
+    const reserved = reservedQty(DB.sessions, m.id);
+    const stockLabel = hasStock(m)
+      ? `📦 ${avail} disponibles` + (reserved ? ` · ${reserved} en mesas abiertas` : '')
+      : '📦 Sin límite de inventario';
     const div = document.createElement('div'); div.className = 'menu-item';
-    div.innerHTML = `<div class="menu-item-img">${m.emoji}<span class="badge ${m.available?'badge-green':'badge-red'}" style="position:absolute;top:8px;right:8px">${m.available?'Disponible':'Agotado'}</span></div>
+    div.innerHTML = `<div class="menu-item-img">${m.emoji}<span class="badge ${soldOut?'badge-red':'badge-green'}" style="position:absolute;top:8px;right:8px">${soldOut?'Agotado':'Disponible'}</span></div>
       <div class="menu-item-body">
         <div class="menu-item-name">${m.name}</div>
         <div class="menu-item-cat">${m.cat}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;color:${hasStock(m)&&avail<=0?'var(--red)':'var(--text3)'};margin:-4px 0 10px">
+          <span>${stockLabel}</span>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openEditStockModal(${m.id})">✏️ Inventario</button>
+        </div>
         <div class="menu-item-footer">
           <div class="menu-item-price">${fmtR(m.price)}</div>
           <div class="toggle ${m.available?'on':''}" onclick="toggleMenuItem(${m.id})"></div>
@@ -1170,17 +1216,46 @@ function toggleMenuItem(id) {
   m.available = !m.available; save(); renderMenu();
   toast((m.available?'✅':'⚠️')+' '+m.name+' '+(m.available?'disponible':'marcado como agotado'));
 }
-function openAddMenuModal() { openModal('modal-add-menu'); }
+function openAddMenuModal() {
+  ['am-name','am-emoji','am-price','am-stock'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  openModal('modal-add-menu');
+}
 function addMenuItem() {
   DB = loadRestDB();
   const name = document.getElementById('am-name').value.trim();
   const emoji = document.getElementById('am-emoji').value.trim() || '🍽️';
   const price = parseFloat(document.getElementById('am-price').value);
   const cat = document.getElementById('am-cat').value;
+  const stock = parseStockInput(document.getElementById('am-stock').value);
   if (!name || !price) { toast('⚠️ Completa nombre y precio'); return; }
-  DB.menu.push({id: DB.nextMenuId++, name, emoji, price, cat, available: true});
+  if (Number.isNaN(stock)) { toast('⚠️ El inventario debe ser un número entero mayor o igual a 0'); return; }
+  DB.menu.push({id: DB.nextMenuId++, name, emoji, price, cat, available: true, stock});
   save(); closeModal('modal-add-menu'); renderMenu();
-  toast('✅ ' + emoji + ' ' + name + ' agregado al menú');
+  toast('✅ ' + emoji + ' ' + name + ' agregado al menú' + (stock !== null ? ' · ' + stock + ' en inventario' : ''));
+}
+
+let _editStockId = null;
+function openEditStockModal(id) {
+  DB = loadRestDB();
+  const m = DB.menu.find(x => x.id === id); if (!m) return;
+  _editStockId = id;
+  const reserved = reservedQty(DB.sessions, id);
+  document.getElementById('es-title').textContent = 'Inventario · ' + m.emoji + ' ' + m.name;
+  document.getElementById('es-stock').value = hasStock(m) ? m.stock : '';
+  document.getElementById('es-info').innerHTML =
+    'Deja el campo vacío para no limitar este plato.<br>' +
+    (reserved ? `Hay <strong>${reserved}</strong> unidad(es) pedidas en mesas abiertas; se descuentan del inventario al cerrar cada mesa.` :
+                'No hay unidades pedidas en mesas abiertas.');
+  openModal('modal-edit-stock');
+}
+function saveMenuStock() {
+  DB = loadRestDB();
+  const m = DB.menu.find(x => x.id === _editStockId); if (!m) return;
+  const stock = parseStockInput(document.getElementById('es-stock').value);
+  if (Number.isNaN(stock)) { toast('⚠️ El inventario debe ser un número entero mayor o igual a 0'); return; }
+  m.stock = stock;
+  save(); closeModal('modal-edit-stock'); renderMenu();
+  toast('📦 ' + m.name + ': ' + (stock === null ? 'sin límite de inventario' : availableQty(m, DB.sessions) + ' disponibles'));
 }
 
 // ─────────────────────────────────
