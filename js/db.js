@@ -116,7 +116,8 @@ async function _sbForeignSessionIds(ids, restaurantEmail) {
 }
 
 // restaurantId (opcional pero recomendado): limita la actualización a las sesiones de ese restaurante
-async function sbUpdateSessionFields(sessionId, fields, restaurantId) {
+// opts.onlyOpen: solo actualiza si la mesa sigue abierta (el cliente no puede escribir en una mesa cerrada)
+async function sbUpdateSessionFields(sessionId, fields, restaurantId, opts = {}) {
   const row = {};
   if (fields.participants     !== undefined) row.participants      = fields.participants;
   if (fields.orders           !== undefined) row.orders            = fields.orders;
@@ -126,6 +127,7 @@ async function sbUpdateSessionFields(sessionId, fields, restaurantId) {
   if (fields.closedAt         !== undefined) row.closed_at         = fields.closedAt;
   let q = _sb.from('sg_sessions').update(row).eq('id', String(sessionId));
   if (restaurantId) q = q.eq('restaurant_id', restaurantId);
+  if (opts.onlyOpen) q = q.in('status', ['occupied', 'paying']);
   const { data, error } = await q.select('id');
   if (error) { console.warn('sbUpdateSessionFields:', error.message); return false; }
   if (!data?.length) { console.warn('sbUpdateSessionFields: sesión', sessionId, 'no encontrada para', restaurantId || '(sin restaurante)'); return false; }
@@ -153,6 +155,16 @@ async function sbGetSessionByCode(code) {
     console.warn('sbGetSessionByCode:', error.message);
     throw new Error(error.message);
   }
+  return data ? _rowToSession(data) : null;
+}
+
+// Estado actual de una sesión. Lanza error si falla la red (para no confundir
+// "sin conexión" con "mesa cerrada"); devuelve null si la sesión ya no existe.
+async function sbCheckSession(sessionId, restaurantId) {
+  let q = _sb.from('sg_sessions').select('*').eq('id', String(sessionId));
+  if (restaurantId) q = q.eq('restaurant_id', restaurantId);
+  const { data, error } = await q.maybeSingle();
+  if (error) throw new Error(error.message);
   return data ? _rowToSession(data) : null;
 }
 
@@ -191,6 +203,12 @@ async function sbLoadHistory(restaurantEmail) {
 let _syncPending = false;
 
 let _syncAgain = false;
+// Espera a que terminen las sincronizaciones en curso (p. ej. antes de marcar una mesa como cerrada,
+// para que una subida vieja no la vuelva a dejar "abierta" en la nube)
+async function sbWaitSyncIdle(timeoutMs = 10000) {
+  const t0 = Date.now();
+  while ((_syncPending || _syncAgain) && Date.now() - t0 < timeoutMs) await new Promise(r => setTimeout(r, 100));
+}
 async function sbSyncDB(db) {
   if (!db?._loginEmail) return;
   // Si ya hay una sincronización en curso, repetir al terminar (antes se perdía este cambio)

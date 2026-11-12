@@ -1179,7 +1179,12 @@ function closeTableSession() {
   save();
   // Marcar la sesión como cerrada en la nube (si no, seguiría contando como mesa abierta)
   if (DB._loginEmail) {
-    sbUpdateSessionFields(String(s.id), { status: 'closed', closedAt: s.closedAt }, DB._loginEmail).catch(() => {});
+    const email = DB._loginEmail;
+    // Esperar a que termine la sincronización en curso; si no, podría reescribir la mesa como abierta.
+    // El cambio a 'closed' llega en tiempo real a la vista del cliente.
+    sbWaitSyncIdle()
+      .then(() => sbUpdateSessionFields(String(s.id), { status: 'closed', closedAt: s.closedAt }, email))
+      .catch(() => {});
     sbSaveHistoryEntry(DB._loginEmail, s).catch(() => {});
   }
   toast('✅ Mesa #' + s.tableNumber + ' cerrada · Total: ' + fmtR(s.total));

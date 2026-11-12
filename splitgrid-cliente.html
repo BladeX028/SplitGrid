@@ -548,15 +548,73 @@ function fmtC(n) { return fmt(n); }
 // es la más reciente (ahí el restaurante cambia estados); si no, la copia en vivo de Supabase.
 function _sess() {
   if (!CL.session) return CL._liveSession || null;
-  const local = _localRestForSession()?.sessions?.find(se => String(se.id) === String(CL.session.sessionId));
-  return local || CL._liveSession || null;
+  const rest = _localRestForSession();
+  const sid = String(CL.session.sessionId);
+  const local = rest?.sessions?.find(se => String(se.id) === sid);
+  if (local) return local;
+  // El restaurante de este navegador ya la cerró (está en su historial)
+  const closed = rest?.history?.find(h => String(h.id) === sid);
+  if (closed) return { ...closed, status: 'closed' };
+  return CL._liveSession || null;
 }
-// Guarda cambios de la sesión en Supabase y, si aplica, en el restaurante de este navegador
+// Guarda cambios de la sesión en Supabase y, si aplica, en el restaurante de este navegador.
+// Devuelve false si la mesa ya fue cerrada (el cambio no se aplica).
 async function _persistSession(s) {
-  await _syncSession(s);
+  if (!await _syncSession(s)) return false;
   const restDB = _localRestForSession();
   const ls = restDB?.sessions?.find(se => String(se.id) === String(CL.session.sessionId));
   if (ls) { ls.orders = s.orders; ls.participants = s.participants; saveRestDB(restDB); }
+  return true;
+}
+
+// ── CIERRE DE MESA EN TIEMPO REAL ──
+// Confirma con datos frescos que la mesa sigue abierta; si el restaurante la cerró, sale de ella.
+async function _ensureOpenSession() {
+  if (!CL.session) return false;
+  let s;
+  if (_localRestForSession()) {
+    s = _sess();
+  } else {
+    try {
+      s = await sbCheckSession(String(CL.session.sessionId), CL.session.restaurantId);
+      if (s) CL._liveSession = s;
+    } catch(e) {
+      console.warn('_ensureOpenSession (sin conexión, se usa la copia local):', e.message);
+      s = _sess();
+    }
+  }
+  if (!s || s.status === 'closed') { _handleSessionClosed(s); return false; }
+  return true;
+}
+// El restaurante cerró la mesa: avisar y dejar al cliente fuera de ella
+function _handleSessionClosed(s) {
+  if (!CL.session) return;
+  const table = s?.tableNumber || CL.session.tableNumber;
+  const rest = CL.session.restaurantName ? ' de ' + CL.session.restaurantName : '';
+  CL.session = null; CL._liveSession = null; CL.menu = []; saveC();
+  _myOrderSnap = null; _stockCtx = null;
+  sbUnsubscribeAll();
+  document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+  document.getElementById('sidebar-sub').textContent = 'Sin mesa';
+  document.getElementById('live-indicator').style.display = 'none';
+  document.getElementById('topbar-pay-btn').style.display = 'none';
+  showPanel('mesa');
+  toast('🔒 La Mesa #' + table + rest + ' fue cerrada por el restaurante. ¡Gracias por tu visita!', 7000);
+}
+// Respaldo si se pierde el evento en tiempo real (p. ej. el celular suspendió la conexión)
+let _remoteCheckBusy = false;
+async function _checkRemoteSession() {
+  if (!CL.session || _remoteCheckBusy || _localRestForSession()) return;
+  _remoteCheckBusy = true;
+  try {
+    const s = await sbCheckSession(String(CL.session.sessionId), CL.session.restaurantId);
+    if (!CL.session) return;
+    if (!s || s.status === 'closed') { _handleSessionClosed(s); return; }
+    const changed = JSON.stringify(s) !== JSON.stringify(CL._liveSession);
+    CL._liveSession = s;
+    if (changed) { saveC(); renderMesa(); renderPago(); }
+  } catch(e) { /* sin conexión: se reintenta en el siguiente ciclo */ }
+  finally { _remoteCheckBusy = false; }
 }
 // Restaurante guardado en este navegador, solo si es el MISMO de la mesa a la que se unió el cliente
 function _localRestForSession() {
@@ -597,23 +655,27 @@ async function _loadStockContext() {
   _stockCtx = { menu: CL.menu || [], sessions: merge(sessions) };
   return _stockCtx;
 }
-function _noStockMsg(mi, avail) {
+// Al cliente no se le muestra cuántas unidades quedan: solo que no hay disponibilidad
+function _noStockMsg(mi, avail, qty) {
   return avail <= 0
     ? '⚠️ ' + mi.name + ' no está disponible en este momento. Consulta con el restaurante su disponibilidad.'
-    : '⚠️ Solo hay ' + avail + ' unidad(es) disponibles de ' + mi.name + '. Consulta con el restaurante si necesitas más.';
+    : '⚠️ No hay disponibilidad de ' + (qty ? qty + ' unidades de ' : '') + mi.name + ' en este momento. Pregunta al restaurante por la disponibilidad.';
 }
-// Persiste cambios en la sesión: en Supabase (cross-device) o localStorage (mismo dispositivo)
+// Persiste cambios en la sesión: en Supabase (cross-device) o localStorage (mismo dispositivo).
+// Devuelve false si la mesa ya está cerrada.
 async function _syncSession(updatedSession) {
+  if (!CL.session?.sessionId) return false;
+  const ok = await sbUpdateSessionFields(String(CL.session.sessionId), {
+    participants:     updatedSession.participants,
+    orders:           updatedSession.orders,
+    payments:         updatedSession.payments,
+    transferredDebts: updatedSession.transferredDebts,
+  }, CL.session.restaurantId, { onlyOpen: true }).catch(() => false);
+  // Si la nube rechazó el cambio, puede ser porque la mesa se cerró: comprobar
+  if (!ok && !await _ensureOpenSession()) return false;
   CL._liveSession = updatedSession;
   saveC();
-  if (CL.session?.sessionId) {
-    await sbUpdateSessionFields(String(CL.session.sessionId), {
-      participants:     updatedSession.participants,
-      orders:           updatedSession.orders,
-      payments:         updatedSession.payments,
-      transferredDebts: updatedSession.transferredDebts,
-    }, CL.session.restaurantId).catch(() => {});
-  }
+  return true;
 }
 
 // ─────────────────────────────────
@@ -680,9 +742,14 @@ function launchApp() {
   setInterval(() => {
     if (!CL._liveSession || _localRestForSession()) { renderMesa(); renderPago(); }
   }, 5000);
+  // Respaldo del tiempo real entre dispositivos: revisar la mesa en la nube cada 8 s
+  setInterval(_checkRemoteSession, 8000);
+  // Al volver a la app (el celular suele cortar la conexión en segundo plano), revisar de inmediato
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) _checkRemoteSession(); });
+  window.addEventListener('online', _checkRemoteSession);
   // Si el restaurante está abierto en otra pestaña de este navegador, reflejar sus cambios al instante
   window.addEventListener('storage', e => {
-    if (e.key === 'splitgrid_restaurant' && CL.session) renderMesa();
+    if (e.key === 'splitgrid_restaurant' && CL.session) { renderMesa(); renderPago(); }
   });
 }
 
@@ -787,7 +854,7 @@ async function _joinViaSB(s, code, name) {
   const rejoining = !!existing;
   if (existing) { existing.name = name; }
   else { s.participants.push({ id: myId, name }); }
-  await sbUpdateSessionFields(String(s.id), { participants: s.participants }, s.restaurantId).catch(() => {});
+  await sbUpdateSessionFields(String(s.id), { participants: s.participants }, s.restaurantId, { onlyOpen: true }).catch(() => {});
 
   // Cargar datos del restaurante (menú, nombre, país)
   const restData = await sbLoadRestaurant(s.restaurantId || '').catch(() => null);
@@ -936,8 +1003,9 @@ function onTipPctChange(val) {
 // ─────────────────────────────────
 // PROXY GUEST (from client side)
 // ─────────────────────────────────
-function openProxyModal() {
+async function openProxyModal() {
   if (!CL.session) { toast('⚠️ Únete a una mesa primero'); return; }
+  if (!await _ensureOpenSession()) return;
   document.getElementById('client-proxy-name').value = '';
   openModal('modal-proxy');
 }
@@ -945,17 +1013,12 @@ function openProxyModal() {
 async function addClientProxy() {
   const name = document.getElementById('client-proxy-name').value.trim();
   if (!name) { toast('⚠️ Ingresa el nombre'); return; }
-  if (!CL.session) return;
+  if (!await _ensureOpenSession()) return;
   const s = _sess(); if (!s) return;
   const newPerson = { id: 'proxy_' + Date.now(), name, isProxy: true, managedBy: CL.session.myId };
   s.participants.push(newPerson);
   // Sync to Supabase (cross-device) and localStorage (same-device)
-  await _syncSession(s);
-  const restDB = _localRestForSession();
-  if (restDB) {
-    const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
-    if (ls) { ls.participants = s.participants; saveRestDB(restDB); }
-  }
+  if (!await _persistSession(s)) return; // la mesa se cerró
   closeModal('modal-proxy');
   renderMesa();
   toast('✅ ' + name + ' agregado — sus pagos los gestionas tú');
@@ -966,6 +1029,7 @@ async function addClientProxy() {
 // ─────────────────────────────────
 async function openClientOrderModal() {
   if (!CL.session) { toast('⚠️ Únete a una mesa primero'); return; }
+  if (!await _ensureOpenSession()) return;
   const ctx = await _loadStockContext();
   const menu = ctx.menu.filter(m => m.available !== false);
   if (!menu.length) {
@@ -979,7 +1043,7 @@ async function openClientOrderModal() {
     const op = document.createElement('option');
     op.value = m.id;
     op.textContent = m.emoji + ' ' + m.name + ' — ' + fmtC(m.price) +
-      (avail <= 0 ? ' · No disponible' : (hasStock(m) ? ' · quedan ' + avail : ''));
+      (avail <= 0 ? ' · No disponible' : '');
     if (avail <= 0) op.disabled = true;
     sel.appendChild(op);
   });
@@ -1079,18 +1143,16 @@ function _updateClientOrderPreview() {
     html += `<br><span style="color:var(--text3)">Se agrega a tu cuenta personal</span>`;
   }
   if (targetError) html += `<br><span style="color:var(--red);font-weight:600">${targetError}</span>`;
-  // Revisión de inventario en vivo: limita la cantidad y bloquea el botón si se pasa
+  // Revisión de inventario en vivo: bloquea el botón si no hay disponibilidad.
+  // Al cliente NO se le muestra cuántas unidades quedan (ni siquiera vía el tope del campo).
   const avail = availableQty(mi, _stockCtx?.sessions || [s].filter(Boolean));
   const limit = Math.min(avail, MAX_QTY_PER_ORDER);
-  const qtyInput = document.getElementById('cl-ao-qty');
-  qtyInput.max = Math.max(1, limit);
+  document.getElementById('cl-ao-qty').max = MAX_QTY_PER_ORDER;
   const over = qty > limit || !!targetError;
   if (qty > limit) {
-    const msg = qty > avail ? _noStockMsg(mi, avail)
+    const msg = qty > avail ? _noStockMsg(mi, avail, qty)
       : '⚠️ Máximo ' + MAX_QTY_PER_ORDER + ' unidades por pedido. Para cantidades mayores consulta con el restaurante.';
     html += `<br><span style="color:var(--red);font-weight:600">${msg}</span>`;
-  } else if (hasStock(mi)) {
-    html += `<br><span style="color:var(--text3)">📦 Disponibles: ${avail}</span>`;
   }
   html += `<br><span style="color:var(--text3);font-size:12px">⏳ El restaurante debe confirmar tu pedido; se cobra cuando pase a "En preparación".</span>`;
   prev.innerHTML = html;
@@ -1100,7 +1162,7 @@ function _updateClientOrderPreview() {
 
 async function addClientOrder() {
   if (!CL.session) return;
-  if (!_sess()) return;
+  if (!await _ensureOpenSession()) return; // el restaurante pudo cerrar la mesa con el modal abierto
   const menuId = parseInt(document.getElementById('cl-ao-item').value);
   const qty = Math.max(1, parseInt(document.getElementById('cl-ao-qty').value) || 1);
   const type = document.getElementById('cl-ao-type').value;
@@ -1115,7 +1177,7 @@ async function addClientOrder() {
   if (!mi || mi.available === false) { toast('⚠️ Este plato ya no está disponible. Consulta con el restaurante.'); return; }
   const avail = availableQty(mi, ctx.sessions);
   if (qty > avail) {
-    toast(_noStockMsg(mi, avail), 6000);
+    toast(_noStockMsg(mi, avail, qty), 6000);
     _updateClientOrderPreview();
     return;
   }
@@ -1144,7 +1206,7 @@ async function addClientOrder() {
     status: 'review', createdBy: 'client', createdById: myId, createdByName: myName,
     createdAt: new Date().toISOString(),
   });
-  await _persistSession(s);
+  if (!await _persistSession(s)) return; // la mesa se cerró: el pedido no se registra
   closeModal('modal-client-order');
   renderMesa();
   toast('⏳ ' + mi.emoji + ' ' + mi.name + ' × ' + qty + label + ' enviado · En revisión por el restaurante', 4000);
@@ -1175,6 +1237,7 @@ function _clientOrderRow(o, mi, subtitle, typeBadge, typeLabel, canCancel, extra
 
 // El cliente pide cancelar un pedido; el restaurante decide
 async function requestOrderCancel(orderId) {
+  if (!await _ensureOpenSession()) return;
   const s = _sess(); if (!s) return;
   const o = (s.orders || []).find(x => String(x.id) === String(orderId));
   if (!o) { toast('⚠️ El pedido ya no existe'); return; }
@@ -1184,7 +1247,7 @@ async function requestOrderCancel(orderId) {
   o.cancelRequested = true;
   o.cancelRequestedBy = CL.session.myName;
   o.cancelRequestedAt = new Date().toISOString();
-  await _persistSession(s);
+  if (!await _persistSession(s)) return;
   renderMesa();
   toast('✋ Solicitud de cancelación enviada al restaurante');
 }
@@ -1227,6 +1290,7 @@ function renderMesa() {
   const s = _sess();
   const menu = _menu();
   if (!s) { CL.session = null; saveC(); renderMesa(); return; }
+  if (s.status === 'closed') { _handleSessionClosed(s); return; }
   const restDB = _localRestForSession(); // puede ser null en cross-device, usar solo para restaurante local
   _notifyOrderChanges(s);
 
@@ -1438,6 +1502,7 @@ function renderPago() {
   if (!CL.session) { noSes.style.display='block'; actSes.style.display='none'; return; }
   noSes.style.display='none'; actSes.style.display='block';
   const s = _sess(); if (!s) return;
+  if (s.status === 'closed') { _handleSessionClosed(s); return; }
   const menu = _menu();
   const restDB = _localRestForSession();
   document.getElementById('pago-country-badge').textContent = '🇨🇴 COP';
@@ -1556,6 +1621,7 @@ let _pendingPay = null;
 
 async function processPayment() {
   if (!CL.session) return;
+  if (!await _ensureOpenSession()) return;
   const s = _sess(); if (!s) return;
   const menu = _menu();
   const myId = CL.session.myId;
@@ -1597,7 +1663,7 @@ async function processPayment() {
   }
 
   if (isCash) {
-    await _registerPayment(_pendingPay, 'pending_cash');
+    if (!await _registerPayment(_pendingPay, 'pending_cash')) return;
     toast('💵 Pago en efectivo registrado · El restaurante confirmará');
     showPanel('mesa');
     return;
@@ -1684,7 +1750,7 @@ function cancelDlocal() {
 async function confirmDlocalPayment() {
   if (!_pendingPay) { closeModal('modal-dlocal-return'); return; }
   closeModal('modal-dlocal-return');
-  await _registerPayment(_pendingPay, 'pending_cash');
+  if (!await _registerPayment(_pendingPay, 'pending_cash')) return;
   toast('🌐 Pago con dLocal registrado · El restaurante confirmará');
   _pendingPay = null;
   showPanel('mesa');
@@ -1693,7 +1759,7 @@ async function confirmDlocalPayment() {
 async function submitPaymentInstructions() {
   if (!_pendingPay) return;
   closeModal('modal-pay-inst');
-  await _registerPayment(_pendingPay, 'pending_cash');
+  if (!await _registerPayment(_pendingPay, 'pending_cash')) return;
   const { methodObj, grandMine } = _pendingPay;
   _pendingPay = null;
   toast(`${methodObj.icon} Pago registrado · Esperando confirmación del restaurante`);
@@ -1701,6 +1767,7 @@ async function submitPaymentInstructions() {
 }
 
 async function _registerPayment({ s, baseAmount, tipAmount, grandMine, methodObj, ref, proxyBase, paidSoFar }, status) {
+  if (!await _ensureOpenSession()) return false;
   const myId = CL.session.myId;
   const restDB = _localRestForSession();
   s.payments = s.payments || [];
@@ -1716,11 +1783,12 @@ async function _registerPayment({ s, baseAmount, tipAmount, grandMine, methodObj
     tipIncluded: includeTip,
     tipPct:      includeTip ? selectedTipPct : 0,
   });
-  await _syncSession(s);
+  if (!await _syncSession(s)) return false; // la mesa se cerró: no registrar el pago
   if (restDB) {
-    const ls = restDB.sessions?.find(se => se.id === CL.session.sessionId);
+    const ls = restDB.sessions?.find(se => String(se.id) === String(CL.session.sessionId));
     if (ls) { ls.payments = s.payments; saveRestDB(restDB); }
   }
+  return true;
 }
 
 function leaveSession() {
