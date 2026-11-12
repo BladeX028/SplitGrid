@@ -134,6 +134,14 @@
         <div class="stat-card"><div class="stat-label">Clientes ahora</div><div class="stat-value" id="dash-clients">0</div><div class="stat-badge badge-purple">En mesa</div></div>
         <div class="stat-card"><div class="stat-label">Clientes hoy</div><div class="stat-value" id="dash-clients-today">0</div><div class="stat-badge badge-cyan">En el día</div></div>
       </div>
+      <!-- Pedidos de clientes por confirmar y solicitudes de cancelación -->
+      <div id="attention-section" style="display:none;margin-bottom:20px">
+        <div class="section-header">
+          <div class="section-title">🔔 Pedidos por atender</div>
+          <span class="badge badge-amber" id="attention-count">0</span>
+        </div>
+        <div class="orders-list" id="attention-list"></div>
+      </div>
       <!-- Pagos pendientes de confirmación -->
       <div id="cash-pending-section" style="display:none;margin-bottom:20px">
         <div class="section-header">
@@ -330,9 +338,9 @@
   <div class="modal">
     <div class="modal-head"><div class="modal-title">Agregar pedido</div><button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-order')">✕</button></div>
     <div class="modal-body">
-      <div class="form-group"><label>Item del menú</label><select id="ao-item"></select></div>
+      <div class="form-group"><label>Item del menú</label><select id="ao-item" onchange="_updateRestOrderHint()"></select></div>
       <div class="form-row">
-        <div class="form-group"><label>Cantidad</label><input type="number" id="ao-qty" value="1" min="1"></div>
+        <div class="form-group"><label>Cantidad</label><input type="number" id="ao-qty" value="1" min="1" oninput="_updateRestOrderHint()"></div>
         <div class="form-group"><label>Tipo</label>
           <select id="ao-type" onchange="toggleShareUI()">
             <option value="individual">🙋 Individual (una persona)</option>
@@ -355,10 +363,11 @@
         <div class="share-person-list" id="ao-share-person-list"></div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px" id="ao-share-count">Ninguna persona seleccionada</div>
       </div>
+      <div id="ao-stock-hint" style="font-size:12px;margin-top:8px;line-height:1.5"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-add-order')">Cancelar</button>
-      <button class="btn btn-primary" style="flex:1" onclick="addOrder()">Agregar →</button>
+      <button class="btn btn-primary" style="flex:1" id="ao-submit" onclick="addOrder()">Agregar →</button>
     </div>
   </div>
 </div>
@@ -611,6 +620,12 @@ function initApp() {
   renderMenu();
   renderHistory();
   setInterval(() => { renderDashboard(); if (currentDetailSession) { const s = DB.sessions.find(se => se.id === currentDetailSession); if (s) renderDetailPanel(s); } }, 5000);
+  // Actualización inmediata cuando un cliente en otra pestaña de este navegador hace cambios
+  window.addEventListener('storage', e => {
+    if (e.key !== 'splitgrid_restaurant' || !DB?._loggedIn) return;
+    renderDashboard();
+    if (currentDetailSession) { const s = DB.sessions.find(se => se.id === currentDetailSession); if (s) renderDetailPanel(s); }
+  });
 }
 
 // ─────────────────────────────────
@@ -663,6 +678,8 @@ function renderDashboard() {
   document.getElementById('dash-clients-today').textContent = clientsToday;
   document.getElementById('active-tables-badge').textContent = active.length;
 
+  renderAttentionOrders(active);
+
   // Pending payments (all methods, not just cash)
   const pendingCash = active.flatMap(s =>
     (s.payments || []).filter(p => p.status === 'pending_cash').map(p => ({...p, session: s}))
@@ -702,11 +719,130 @@ function renderDashboard() {
     const mi = DB.menu.find(m => m.id === o.menuItemId) || {name: o.name||'?', emoji:'🍽️'};
     ol.innerHTML += `<div class="order-item">
       <div class="order-emoji">${mi.emoji}</div>
-      <div><div class="order-name">${mi.name}</div><div class="order-person">Mesa #${o.session.tableNumber} · ${o.personName}</div></div>
-      <span class="badge ${o.type==='shared'?'badge-amber':'badge-blue'}" style="margin-left:auto;margin-right:12px">${o.type==='shared'?'Compartido':'Individual'}</span>
+      <div><div class="order-name">${mi.name} × ${o.qty}</div><div class="order-person">Mesa #${o.session.tableNumber} · ${o.personName}</div></div>
+      <div style="margin-left:auto;margin-right:12px;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${orderStatusBadge(o)}</div>
       <div class="order-price">${fmtR(mi.price * o.qty)}</div>
     </div>`;
   });
+}
+
+// ─────────────────────────────────
+// PEDIDOS POR ATENDER (confirmaciones y cancelaciones)
+// ─────────────────────────────────
+let _seenAttention = null; // claves ya notificadas (null = primera carga, no notificar)
+function renderAttentionOrders(active) {
+  const items = active.flatMap(s => (s.orders || [])
+    .filter(o => orderStatus(o) === 'review' || o.cancelRequested)
+    .map(o => ({ o, s })));
+  const section = document.getElementById('attention-section');
+  const list = document.getElementById('attention-list');
+  if (!section || !list) return;
+
+  // Notificar lo nuevo
+  const keys = new Set(items.map(({o, s}) => s.id + ':' + o.id + ':' + (o.cancelRequested ? 'c' : 'r')));
+  if (_seenAttention) {
+    const fresh = items.filter(({o, s}) => !_seenAttention.has(s.id + ':' + o.id + ':' + (o.cancelRequested ? 'c' : 'r')));
+    if (fresh.length) {
+      const {o, s} = fresh[0];
+      const mi = DB.menu.find(m => m.id === o.menuItemId);
+      toast((o.cancelRequested ? '✋ Solicitud de cancelación' : '🔔 Nuevo pedido por confirmar') +
+        ' · Mesa #' + s.tableNumber + ' · ' + (mi?.name || 'Pedido') + ' × ' + o.qty +
+        (fresh.length > 1 ? ' (+' + (fresh.length - 1) + ' más)' : ''), 6000);
+    }
+  }
+  _seenAttention = keys;
+
+  if (!items.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  document.getElementById('attention-count').textContent = items.length;
+  list.innerHTML = items.map(({o, s}) => {
+    const mi = DB.menu.find(m => m.id === o.menuItemId) || {name:'?', emoji:'🍽️', price:0};
+    return `<div class="order-item" style="border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04);flex-wrap:wrap;gap:8px">
+      <div class="order-emoji">${mi.emoji}</div>
+      <div style="flex:1;min-width:140px">
+        <div class="order-name">${mi.name} × ${o.qty} — Mesa #${s.tableNumber}</div>
+        <div class="order-person">${o.cancelRequested ? '✋ ' + (o.cancelRequestedBy || o.personName) + ' pide cancelar' : 'Pedido por ' + o.personName}</div>
+      </div>
+      <div class="order-price" style="margin-right:4px">${fmtR(mi.price * o.qty)}</div>
+      ${_orderActionButtons(s, o)}
+    </div>`;
+  }).join('');
+}
+
+// Botones según el estado del pedido (se usan en el dashboard y en el detalle de la mesa)
+function _orderActionButtons(s, o) {
+  const sid = String(s.id).replace(/'/g, ''), oid = String(o.id).replace(/'/g, '');
+  const b = (cls, fn, label) => `<button class="btn ${cls} btn-sm" style="padding:4px 10px;font-size:12px" onclick="event.stopPropagation();${fn}('${sid}','${oid}')">${label}</button>`;
+  if (o.cancelRequested) {
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap">${b('btn-danger', 'cancelOrder', '✓ Aprobar cancelación')}${b('btn-ghost', 'rejectCancelRequest', 'Rechazar')}</div>`;
+  }
+  const st = orderStatus(o);
+  const btns = [];
+  if (st === 'review')    btns.push(b('btn-success', 'confirmOrder', '✓ Confirmar'));
+  if (st === 'preparing') btns.push(b('btn-success', 'markOrderDelivered', '✓ Entregado'));
+  btns.push(b('btn-ghost', 'cancelOrder', '✕ Cancelar'));
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap">${btns.join('')}</div>`;
+}
+
+function _findOrder(sessionId, orderId) {
+  DB = loadRestDB();
+  const s = DB.sessions.find(se => String(se.id) === String(sessionId));
+  const o = s?.orders?.find(x => String(x.id) === String(orderId));
+  const mi = o ? DB.menu.find(m => m.id === o.menuItemId) : null;
+  return { s, o, mi };
+}
+function _afterOrderChange(s) {
+  save();
+  renderDashboard(); renderMenu();
+  if (currentDetailSession !== null && String(currentDetailSession) === String(s.id)) renderDetailPanel(s);
+}
+
+// En revisión → En preparación (aquí se descuenta del inventario)
+function confirmOrder(sessionId, orderId) {
+  const { s, o, mi } = _findOrder(sessionId, orderId);
+  if (!o) { toast('⚠️ El pedido ya no existe'); return; }
+  if (hasStock(mi) && Number(mi.stock) < Number(o.qty)) {
+    toast('⚠️ No hay inventario suficiente de ' + mi.name + ' (quedan ' + mi.stock + '). Actualiza el inventario o cancela el pedido.', 6000);
+    return;
+  }
+  applyOrderStock(DB.menu, o);
+  o.status = 'preparing';
+  o.confirmedAt = new Date().toISOString();
+  _afterOrderChange(s);
+  toast('👨‍🍳 ' + (mi?.name || 'Pedido') + ' × ' + o.qty + ' en preparación');
+}
+
+function markOrderDelivered(sessionId, orderId) {
+  const { s, o, mi } = _findOrder(sessionId, orderId);
+  if (!o) return;
+  applyOrderStock(DB.menu, o); // por si era un pedido antiguo sin descontar
+  o.status = 'delivered';
+  o.deliveredAt = new Date().toISOString();
+  _afterOrderChange(s);
+  toast('✅ ' + (mi?.name || 'Pedido') + ' entregado');
+}
+
+// Cancelar (directo desde el restaurante o aprobando la solicitud del cliente):
+// se quita de la cuenta y vuelve al inventario lo que se había descontado
+function cancelOrder(sessionId, orderId) {
+  const { s, o, mi } = _findOrder(sessionId, orderId);
+  if (!o) { toast('⚠️ El pedido ya no existe'); return; }
+  const name = (mi?.name || 'Pedido') + ' × ' + o.qty;
+  if (!confirm('¿Cancelar ' + name + ' de la Mesa #' + s.tableNumber + '?\nSe quitará de la cuenta' +
+      (o.stockApplied && o.stockQty ? ' y se devolverán ' + o.stockQty + ' unidad(es) al inventario.' : '.'))) return;
+  restoreOrderStock(DB.menu, o);
+  s.orders = s.orders.filter(x => String(x.id) !== String(orderId));
+  _afterOrderChange(s);
+  toast('❌ ' + name + ' cancelado');
+}
+
+function rejectCancelRequest(sessionId, orderId) {
+  const { s, o, mi } = _findOrder(sessionId, orderId);
+  if (!o) return;
+  o.cancelRequested = false;
+  o.cancelRejectedAt = new Date().toISOString();
+  _afterOrderChange(s);
+  toast('Solicitud rechazada · ' + (mi?.name || 'Pedido') + ' sigue en la cuenta');
 }
 
 // Confirm a pending cash payment from the restaurant side
@@ -815,14 +951,19 @@ function renderDetailPanel(s) {
         sharedLabel = names.join(', ');
       } else sharedLabel = o.personName;
     }
-    ol.innerHTML += `<div class="order-item">
+    const pending = orderStatus(o) === 'review';
+    ol.innerHTML += `<div class="order-item" style="flex-wrap:wrap;gap:8px${pending||o.cancelRequested?';border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)':''}">
       <div class="order-emoji">${mi.emoji}</div>
-      <div style="flex:1">
+      <div style="flex:1;min-width:140px">
         <div class="order-name">${mi.name} × ${o.qty}</div>
         <div class="order-person">${o.type==='shared'?'Compartido: '+sharedLabel:'Solo: '+o.personName}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+          <span class="badge ${o.type==='shared'?'badge-amber':'badge-gray'}">${o.type==='shared'?'Compartido':'Individual'}</span>
+          ${orderStatusBadge(o)}
+        </div>
       </div>
-      <span class="badge ${o.type==='shared'?'badge-amber':'badge-blue'}" style="margin-right:12px">${o.type==='shared'?'Compartido':'Individual'}</span>
-      <div class="order-price">${fmtR(mi.price * o.qty)}</div>
+      <div class="order-price" style="${pending?'color:var(--text3)':''}" title="${pending?'Aún no se cobra: falta confirmar':''}">${fmtR(mi.price * o.qty)}</div>
+      ${_orderActionButtons(s, o)}
     </div>`;
   });
 
@@ -995,7 +1136,15 @@ function closeTableSession() {
     return paidSoFar < total - 0.01;
   });
   const cashPending = (s.payments||[]).filter(p => p.status === 'pending_cash');
+  const inReview = (s.orders||[]).filter(o => orderStatus(o) === 'review').length;
+  const cancelReqs = (s.orders||[]).filter(o => o.cancelRequested).length;
 
+  if (inReview > 0 || cancelReqs > 0) {
+    toast('⚠️ No se puede cerrar: hay ' +
+      [inReview ? inReview + ' pedido(s) en revisión' : '', cancelReqs ? cancelReqs + ' solicitud(es) de cancelación' : '']
+        .filter(Boolean).join(' y ') + '. Confírmalos o cancélalos primero.', 6000);
+    return;
+  }
   if (unpaidPersons.length > 0) {
     toast('⚠️ No se puede cerrar: ' + unpaidPersons.map(p=>p.name).join(', ') + ' aún tienen saldo pendiente');
     return;
@@ -1050,6 +1199,7 @@ function openAddOrderModal() {
   document.getElementById('ao-type').value = 'individual';
   toggleShareUI();
   openModal('modal-add-order');
+  _updateRestOrderHint();
 }
 
 function toggleShareUI() {
@@ -1132,11 +1282,34 @@ function addOrder() {
       personName = sharedWith.map(pid => s.participants.find(p=>p.id===pid)?.name).filter(Boolean).join(', ');
     } else { toast('⚠️ Selecciona al menos una persona para compartir'); return; }
   }
-  s.orders.push({ id: Date.now(), menuItemId: menuId, qty, type, personId, personName, sharedWith });
+  // Lo registra el restaurante → va directo a "En preparación" y se descuenta del inventario
+  const order = { id: Date.now(), menuItemId: menuId, qty, type, personId, personName, sharedWith,
+    status: 'preparing', createdBy: 'restaurant', createdAt: new Date().toISOString() };
+  applyOrderStock(DB.menu, order);
+  s.orders.push(order);
   save(); closeModal('modal-add-order');
-  renderDetailPanel(s); renderDashboard();
+  renderDetailPanel(s); renderDashboard(); renderMenu();
   const mi = DB.menu.find(m => m.id === menuId);
-  toast('✅ ' + (mi?.emoji||'') + ' ' + (mi?.name||'') + ' agregado · ' + (type==='shared'?'Compartido':'Individual'));
+  toast('👨‍🍳 ' + (mi?.emoji||'') + ' ' + (mi?.name||'') + ' × ' + qty + ' en preparación · ' + (type==='shared'?'Compartido':'Individual'));
+}
+
+// Aviso en vivo de inventario mientras se escribe la cantidad
+function _updateRestOrderHint() {
+  const hint = document.getElementById('ao-stock-hint');
+  const btn = document.getElementById('ao-submit');
+  if (!hint) return;
+  const d = loadRestDB();
+  const mi = d?.menu?.find(m => m.id === parseInt(document.getElementById('ao-item').value));
+  const qty = Math.max(1, parseInt(document.getElementById('ao-qty').value) || 1);
+  if (!mi) { hint.innerHTML = ''; if (btn) btn.disabled = false; return; }
+  const avail = availableQty(mi, d.sessions);
+  const over = qty > avail;
+  hint.style.color = over ? 'var(--red)' : 'var(--text3)';
+  hint.innerHTML = !hasStock(mi) ? '📦 Sin límite de inventario'
+    : over ? `⚠️ Solo quedan <strong>${avail}</strong> unidad(es) de ${mi.name}. Ajusta la cantidad o actualiza el inventario en Menú.`
+    : `📦 Quedan ${avail} unidad(es) disponibles`;
+  document.getElementById('ao-qty').max = hasStock(mi) ? avail : '';
+  if (btn) { btn.disabled = over; btn.style.opacity = over ? '.5' : ''; }
 }
 
 // ─────────────────────────────────
@@ -1186,7 +1359,7 @@ function renderMenu() {
     const soldOut = !m.available || avail <= 0;
     const reserved = reservedQty(DB.sessions, m.id);
     const stockLabel = hasStock(m)
-      ? `📦 ${avail} disponibles` + (reserved ? ` · ${reserved} en mesas abiertas` : '')
+      ? `📦 ${avail} disponibles` + (reserved ? ` · ${reserved} por confirmar` : '')
       : '📦 Sin límite de inventario';
     const div = document.createElement('div'); div.className = 'menu-item';
     div.innerHTML = `<div class="menu-item-img">${m.emoji}<span class="badge ${soldOut?'badge-red':'badge-green'}" style="position:absolute;top:8px;right:8px">${soldOut?'Agotado':'Disponible'}</span></div>
@@ -1244,8 +1417,9 @@ function openEditStockModal(id) {
   document.getElementById('es-stock').value = hasStock(m) ? m.stock : '';
   document.getElementById('es-info').innerHTML =
     'Deja el campo vacío para no limitar este plato.<br>' +
-    (reserved ? `Hay <strong>${reserved}</strong> unidad(es) pedidas en mesas abiertas; se descuentan del inventario al cerrar cada mesa.` :
-                'No hay unidades pedidas en mesas abiertas.');
+    'Este número es lo que hay en cocina ahora: los pedidos se descuentan al pasar a "En preparación".<br>' +
+    (reserved ? `Hay <strong>${reserved}</strong> unidad(es) en pedidos por confirmar (apartadas).` :
+                'No hay pedidos por confirmar de este plato.');
   openModal('modal-edit-stock');
 }
 function saveMenuStock() {

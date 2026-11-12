@@ -77,32 +77,67 @@ function toast(msg, dur = 2800) {
 function openModal(id) { document.getElementById(id)?.classList.add('open'); }
 function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
 
+// ── ESTADOS DE PEDIDO ──
+// review    → En revisión: lo registró el cliente, el restaurante debe confirmarlo o cancelarlo.
+//             Aparta unidades del inventario pero aún NO se cobra.
+// preparing → En preparación: confirmado; aquí se descuenta del inventario.
+// delivered → Entregado.
+// Cancelar = el pedido se elimina de la cuenta y, si ya se había descontado, vuelve al inventario.
+const ORDER_STATUS = {
+  review:    { label: 'En revisión',    badge: 'badge-amber', icon: '⏳' },
+  preparing: { label: 'En preparación', badge: 'badge-blue',  icon: '👨‍🍳' },
+  delivered: { label: 'Entregado',      badge: 'badge-green', icon: '✅' },
+};
+function orderStatus(o) { return (o && ORDER_STATUS[o.status]) ? o.status : 'preparing'; }
+function isBillable(o) { return orderStatus(o) !== 'review'; }
+function orderStatusBadge(o, style = '') {
+  const st = ORDER_STATUS[orderStatus(o)];
+  let html = `<span class="badge ${st.badge}" style="${style}">${st.icon} ${st.label}</span>`;
+  if (o.cancelRequested) html += `<span class="badge badge-red" style="${style}">✋ Cancelación solicitada</span>`;
+  return html;
+}
+
 // ── INVENTARIO ──
 // m.stock = unidades en inventario que el restaurante define (null/undefined = sin límite).
-// Los pedidos de mesas abiertas "reservan" unidades; al cerrar la mesa se descuentan del stock.
+// Al pasar un pedido a "En preparación" se descuenta de m.stock (o.stockApplied = true).
+// Los pedidos que aún no se descuentan (En revisión) apartan unidades: disponible = stock - apartado.
 const MAX_QTY_PER_ORDER = 20; // tope de seguridad por pedido desde la app del cliente
 
 function hasStock(m) {
   return !!m && m.stock !== null && m.stock !== undefined && m.stock !== '' && !isNaN(m.stock);
 }
+function _openSessions(sessions) {
+  return (sessions || []).filter(s => s && (s.status === 'occupied' || s.status === 'paying'));
+}
+// Unidades apartadas por pedidos que todavía no se descuentan del inventario
 function reservedQty(sessions, menuItemId) {
-  return (sessions || [])
-    .filter(s => s && (s.status === 'occupied' || s.status === 'paying'))
-    .reduce((t, s) => t + (s.orders || [])
-      .filter(o => o.menuItemId === menuItemId)
-      .reduce((a, o) => a + (Number(o.qty) || 0), 0), 0);
+  return _openSessions(sessions).reduce((t, s) => t + (s.orders || [])
+    .filter(o => o.menuItemId === menuItemId && !o.stockApplied)
+    .reduce((a, o) => a + (Number(o.qty) || 0), 0), 0);
 }
 // Unidades disponibles para pedir ahora (Infinity si el plato no maneja inventario)
 function availableQty(m, sessions) {
   if (!hasStock(m)) return Infinity;
   return Math.max(0, Number(m.stock) - reservedQty(sessions, m.id));
 }
-// Descuenta del inventario lo consumido en una sesión que se cierra
+// Descuenta del inventario un pedido (al pasar a "En preparación"). Idempotente.
+function applyOrderStock(menu, o) {
+  if (o.stockApplied) return;
+  const mi = (menu || []).find(m => m.id === o.menuItemId);
+  const n = hasStock(mi) ? (Number(o.qty) || 0) : 0;
+  if (n) mi.stock = Math.max(0, Number(mi.stock) - n);
+  o.stockApplied = true;
+  o.stockQty = n; // lo que realmente se descontó (para devolverlo si se cancela)
+}
+// Devuelve al inventario lo que un pedido había descontado (al cancelarlo)
+function restoreOrderStock(menu, o) {
+  if (!o.stockApplied || !o.stockQty) return;
+  const mi = (menu || []).find(m => m.id === o.menuItemId);
+  if (hasStock(mi)) mi.stock = Number(mi.stock) + Number(o.stockQty);
+}
+// Al cerrar una mesa: descuenta pedidos antiguos que nunca pasaron por el flujo de estados
 function consumeStock(menu, session) {
-  (session.orders || []).forEach(o => {
-    const mi = (menu || []).find(m => m.id === o.menuItemId);
-    if (hasStock(mi)) mi.stock = Math.max(0, Number(mi.stock) - (Number(o.qty) || 0));
-  });
+  (session.orders || []).forEach(o => applyOrderStock(menu, o));
 }
 function parseStockInput(val) {
   const v = String(val ?? '').trim();
@@ -113,7 +148,7 @@ function parseStockInput(val) {
 
 // ── SESSION MATH ──
 function sessionSubtotal(s, menu) {
-  return (s.orders || []).reduce((t, o) => {
+  return (s.orders || []).filter(isBillable).reduce((t, o) => {
     const mi = menu.find(m => m.id === o.menuItemId);
     return t + (mi ? mi.price * o.qty : 0);
   }, 0);
@@ -124,7 +159,7 @@ function sessionTotal(s, menu) {
 }
 function calcPersonTotal(s, personId, menu) {
   let sub = 0;
-  (s.orders || []).forEach(o => {
+  (s.orders || []).filter(isBillable).forEach(o => {
     const mi = menu.find(m => m.id === o.menuItemId);
     if (!mi) return;
     if (o.type === 'individual' && o.personId === personId) sub += mi.price * o.qty;

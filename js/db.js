@@ -179,14 +179,24 @@ async function sbLoadHistory(restaurantEmail) {
 
 let _syncPending = false;
 
+let _syncAgain = false;
 async function sbSyncDB(db) {
-  if (!db?._loginEmail || _syncPending) return;
+  if (!db?._loginEmail) return;
+  // Si ya hay una sincronización en curso, repetir al terminar (antes se perdía este cambio)
+  if (_syncPending) { _syncAgain = true; return; }
   _syncPending = true;
   try {
     await sbSaveRestaurant(db);
     await Promise.all(db.sessions.map(s => sbUpsertSession(db._loginEmail, s)));
   } catch(e) { console.warn('sbSyncDB error:', e); }
-  finally { _syncPending = false; }
+  finally {
+    _syncPending = false;
+    if (_syncAgain) {
+      _syncAgain = false;
+      const latest = typeof loadRestDB === 'function' ? loadRestDB() : db;
+      if (latest?._loginEmail === db._loginEmail) sbSyncDB(latest);
+    }
+  }
 }
 
 // ── CARGA COMPLETA DESDE SUPABASE ──────────────────────────────
