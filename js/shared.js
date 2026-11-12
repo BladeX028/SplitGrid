@@ -75,6 +75,28 @@ function saveClientState(st) {
   localStorage.setItem('splitgrid_client', JSON.stringify(st));
 }
 
+// ── CELULAR: la página nunca debe quedar desplazada ──
+// La app se desplaza dentro de .content; si el navegador mueve la página completa
+// (teclado, focus() de un input), la barra superior queda fuera de pantalla y no se puede volver.
+(function keepAppPinnedTop() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const typing = () => {
+    const a = document.activeElement;
+    return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
+  };
+  const reset = () => {
+    if (!document.getElementById('app')) return; // solo en las vistas de la app (no en la landing)
+    if (typing()) return;                         // con el teclado abierto, dejar que el navegador muestre el campo
+    const se = document.scrollingElement || document.documentElement;
+    if (se && (se.scrollTop || se.scrollLeft)) { se.scrollTop = 0; se.scrollLeft = 0; }
+    if (document.body && (document.body.scrollTop || document.body.scrollLeft)) { document.body.scrollTop = 0; document.body.scrollLeft = 0; }
+  };
+  window.addEventListener('scroll', reset, { passive: true });
+  document.addEventListener('focusout', () => setTimeout(reset, 50));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => setTimeout(reset, 50));
+  window.addEventListener('orientationchange', () => setTimeout(reset, 300));
+})();
+
 // ── TOAST ──
 function toast(msg, dur = 2800) {
   const el = document.getElementById('toast');

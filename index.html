@@ -7,7 +7,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/splitgrid.css">
 <style>
-body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
+/* La landing sí puede desplazarse (la app bloquea el scroll de la página en splitgrid.css) */
+html{overflow:auto}
+body{display:flex;align-items:center;justify-content:center;height:auto;min-height:100vh;min-height:100dvh;overflow:visible;background:var(--bg)}
 .landing{width:100%;max-width:440px;padding:32px 20px;text-align:center}
 .landing-logo{font-family:'Space Grotesk',sans-serif;font-size:42px;font-weight:800;letter-spacing:-1.5px;margin-bottom:6px}
 .landing-logo span{color:var(--blue)}

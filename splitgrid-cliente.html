@@ -831,7 +831,7 @@ let _scanInterval = null;
 function simulateScan() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     toast('⚠️ Tu navegador no soporta acceso a cámara');
-    document.getElementById('join-code').focus();
+    document.getElementById('join-code').focus({ preventScroll: true });
     return;
   }
   const overlay = document.getElementById('qr-scanner-overlay');
@@ -847,7 +847,7 @@ function simulateScan() {
     .catch(() => {
       closeQRScanner();
       toast('⚠️ No se pudo acceder a la cámara — ingresa el código manualmente');
-      document.getElementById('join-code').focus();
+      document.getElementById('join-code').focus({ preventScroll: true });
     });
 }
 
@@ -873,7 +873,7 @@ function _scanFrame() {
       toast('✅ QR leído: ' + code);
     } else {
       toast('⚠️ QR no reconocido — ingresa el código manualmente');
-      document.getElementById('join-code').focus();
+      document.getElementById('join-code').focus({ preventScroll: true });
     }
   }
 }
