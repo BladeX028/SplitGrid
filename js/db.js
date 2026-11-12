@@ -106,7 +106,17 @@ async function sbUpsertSession(restaurantEmail, session) {
   if (error) console.warn('sbUpsertSession:', error.message);
 }
 
-async function sbUpdateSessionFields(sessionId, fields) {
+// IDs de la lista que en Supabase pertenecen a OTRO restaurante (para no sobrescribirlos)
+async function _sbForeignSessionIds(ids, restaurantEmail) {
+  if (!ids.length) return new Set();
+  const { data, error } = await _sb.from('sg_sessions')
+    .select('id').in('id', ids.map(String)).neq('restaurant_id', restaurantEmail);
+  if (error) throw new Error(error.message);
+  return new Set((data || []).map(r => String(r.id)));
+}
+
+// restaurantId (opcional pero recomendado): limita la actualización a las sesiones de ese restaurante
+async function sbUpdateSessionFields(sessionId, fields, restaurantId) {
   const row = {};
   if (fields.participants     !== undefined) row.participants      = fields.participants;
   if (fields.orders           !== undefined) row.orders            = fields.orders;
@@ -114,9 +124,12 @@ async function sbUpdateSessionFields(sessionId, fields) {
   if (fields.transferredDebts !== undefined) row.transferred_debts = fields.transferredDebts;
   if (fields.status           !== undefined) row.status            = fields.status;
   if (fields.closedAt         !== undefined) row.closed_at         = fields.closedAt;
-  const { error } = await _sb.from('sg_sessions').update(row).eq('id', String(sessionId));
-  if (error) console.warn('sbUpdateSessionFields:', error.message);
-  return !error;
+  let q = _sb.from('sg_sessions').update(row).eq('id', String(sessionId));
+  if (restaurantId) q = q.eq('restaurant_id', restaurantId);
+  const { data, error } = await q.select('id');
+  if (error) { console.warn('sbUpdateSessionFields:', error.message); return false; }
+  if (!data?.length) { console.warn('sbUpdateSessionFields: sesión', sessionId, 'no encontrada para', restaurantId || '(sin restaurante)'); return false; }
+  return true;
 }
 
 async function sbLoadSessions(restaurantEmail) {
@@ -143,12 +156,10 @@ async function sbGetSessionByCode(code) {
   return data ? _rowToSession(data) : null;
 }
 
-async function sbGetSessionById(sessionId) {
-  const { data, error } = await _sb
-    .from('sg_sessions')
-    .select('*')
-    .eq('id', String(sessionId))
-    .maybeSingle();
+async function sbGetSessionById(sessionId, restaurantId) {
+  let q = _sb.from('sg_sessions').select('*').eq('id', String(sessionId));
+  if (restaurantId) q = q.eq('restaurant_id', restaurantId);
+  const { data, error } = await q.maybeSingle();
   if (error) { console.warn('sbGetSessionById:', error.message); return null; }
   return data ? _rowToSession(data) : null;
 }
@@ -187,7 +198,11 @@ async function sbSyncDB(db) {
   _syncPending = true;
   try {
     await sbSaveRestaurant(db);
-    await Promise.all(db.sessions.map(s => sbUpsertSession(db._loginEmail, s)));
+    // Nunca sobrescribir una sesión que en la nube es de otro restaurante (IDs antiguos 1, 2, 3…)
+    const foreign = await _sbForeignSessionIds(db.sessions.map(s => s.id), db._loginEmail);
+    const mine = db.sessions.filter(s => !foreign.has(String(s.id)));
+    if (foreign.size) console.warn('sbSyncDB: se omiten sesiones con ID de otro restaurante:', [...foreign]);
+    await Promise.all(mine.map(s => sbUpsertSession(db._loginEmail, s)));
   } catch(e) { console.warn('sbSyncDB error:', e); }
   finally {
     _syncPending = false;

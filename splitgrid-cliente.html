@@ -400,11 +400,23 @@
         </div>
         <div class="form-group" style="flex:2">
           <label>Tipo</label>
-          <select id="cl-ao-type" onchange="_updateClientOrderPreview()">
+          <select id="cl-ao-type" onchange="_onClientOrderTypeChange()">
             <option value="individual">🙋 Solo para mí</option>
+            <option value="proxy">🔹 Para un comensal sin app</option>
             <option value="shared_all">🤝 Compartido (todos)</option>
+            <option value="shared_some">👥 Compartido (elegir personas)</option>
           </select>
         </div>
+      </div>
+      <!-- Individual para un comensal sin app (proxy) -->
+      <div class="form-group" id="cl-ao-proxy-section" style="display:none">
+        <label>¿Para quién?</label>
+        <select id="cl-ao-proxy" onchange="_updateClientOrderPreview()"></select>
+      </div>
+      <!-- Compartido entre personas seleccionadas -->
+      <div id="cl-ao-share-section" style="display:none">
+        <label style="font-size:12px;font-weight:500;color:var(--text3);display:block;margin-bottom:8px">Selecciona con quién se comparte</label>
+        <div class="share-person-list" id="cl-ao-share-list"></div>
       </div>
       <div id="cl-ao-preview" style="background:var(--bg4);border-radius:var(--r);padding:12px 14px;font-size:13px;color:var(--text2);margin-top:4px;line-height:1.7"></div>
     </div>
@@ -600,7 +612,7 @@ async function _syncSession(updatedSession) {
       orders:           updatedSession.orders,
       payments:         updatedSession.payments,
       transferredDebts: updatedSession.transferredDebts,
-    }).catch(() => {});
+    }, CL.session.restaurantId).catch(() => {});
   }
 }
 
@@ -647,7 +659,7 @@ function launchApp() {
 
   // Si ya tiene sesión activa, reconectar a Supabase Realtime y cargar datos frescos
   if (CL.session?.sessionId) {
-    sbGetSessionById(String(CL.session.sessionId)).then(s => {
+    sbGetSessionById(String(CL.session.sessionId), CL.session.restaurantId).then(s => {
       if (s) {
         CL._liveSession = s;
         CL.menu = CL.menu || [];
@@ -775,7 +787,7 @@ async function _joinViaSB(s, code, name) {
   const rejoining = !!existing;
   if (existing) { existing.name = name; }
   else { s.participants.push({ id: myId, name }); }
-  await sbUpdateSessionFields(String(s.id), { participants: s.participants }).catch(() => {});
+  await sbUpdateSessionFields(String(s.id), { participants: s.participants }, s.restaurantId).catch(() => {});
 
   // Cargar datos del restaurante (menú, nombre, país)
   const restData = await sbLoadRestaurant(s.restaurantId || '').catch(() => null);
@@ -980,8 +992,55 @@ async function openClientOrderModal() {
   document.getElementById('cl-ao-qty').value = 1;
   document.getElementById('cl-ao-qty').max = MAX_QTY_PER_ORDER;
   document.getElementById('cl-ao-type').value = 'individual';
-  _updateClientOrderPreview();
+  _buildClientOrderTargets();
+  _onClientOrderTypeChange();
   openModal('modal-client-order');
+}
+
+// ── Destinatarios del pedido: comensales sin app y selección para compartir ──
+let _clShareSel = new Set();
+function _buildClientOrderTargets() {
+  const s = _sess();
+  const myId = CL.session.myId;
+  const parts = s?.participants || [];
+  const nameOf = id => parts.find(p => p.id === id)?.name || '?';
+  // Comensales sin app (a cargo de alguien de la mesa); primero los que gestiono yo
+  const proxies = parts.filter(p => p.isProxy)
+    .sort((a, b) => (b.managedBy === myId) - (a.managedBy === myId));
+  const psel = document.getElementById('cl-ao-proxy');
+  psel.innerHTML = proxies.map(p =>
+    `<option value="${p.id}">${p.name} — ${p.managedBy === myId ? 'a tu cargo' : 'a cargo de ' + nameOf(p.managedBy)}</option>`).join('');
+  const proxyOpt = document.querySelector('#cl-ao-type option[value="proxy"]');
+  proxyOpt.disabled = !proxies.length;
+  proxyOpt.textContent = proxies.length ? '🔹 Para un comensal sin app' : '🔹 Para un comensal sin app (no hay en la mesa)';
+  // Compartido: por defecto incluye a quien pide
+  _clShareSel = new Set([myId]);
+  _renderClientShareList();
+}
+function _renderClientShareList() {
+  const s = _sess();
+  const myId = CL.session.myId;
+  const list = document.getElementById('cl-ao-share-list');
+  list.innerHTML = '';
+  (s?.participants || []).forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'share-person-item' + (_clShareSel.has(p.id) ? ' selected' : '');
+    div.innerHTML = `<div class="av-dot" style="background:${AV_COLORS[i % 8]}">${initials(p.name)}</div>
+      <span style="font-size:13px;font-weight:500;color:var(--text)">${p.name}${p.id === myId ? ' (yo)' : ''}${p.isProxy ? ' 🔹' : ''}</span>
+      <div class="share-checkbox"></div>`;
+    div.onclick = () => {
+      if (_clShareSel.has(p.id)) _clShareSel.delete(p.id); else _clShareSel.add(p.id);
+      _renderClientShareList();
+      _updateClientOrderPreview();
+    };
+    list.appendChild(div);
+  });
+}
+function _onClientOrderTypeChange() {
+  const type = document.getElementById('cl-ao-type').value;
+  document.getElementById('cl-ao-proxy-section').style.display = type === 'proxy' ? 'block' : 'none';
+  document.getElementById('cl-ao-share-section').style.display = type === 'shared_some' ? 'block' : 'none';
+  _updateClientOrderPreview();
 }
 
 function _updateClientOrderPreview() {
@@ -996,18 +1055,37 @@ function _updateClientOrderPreview() {
   const nParts = s?.participants?.length || 1;
   const total = mi.price * qty;
   let html = `<strong>${mi.emoji} ${mi.name}</strong> × ${qty} = <strong>${fmtC(total)}</strong>`;
+  let targetError = '';
   if (type === 'shared_all' && nParts > 1) {
     html += `<br><span style="color:var(--text3)">÷ ${nParts} personas = <strong style="color:var(--blue)">${fmtC(total / nParts)}</strong> tu parte</span>`;
+  } else if (type === 'shared_some') {
+    const n = _clShareSel.size;
+    if (!n) targetError = '⚠️ Selecciona al menos una persona para compartir.';
+    else {
+      const meIn = _clShareSel.has(CL.session.myId);
+      html += `<br><span style="color:var(--text3)">÷ ${n} persona(s) = <strong style="color:var(--blue)">${fmtC(total / n)}</strong> cada una` +
+        (meIn ? '' : ' · tú no estás incluido') + `</span>`;
+    }
+  } else if (type === 'proxy') {
+    const pid = document.getElementById('cl-ao-proxy').value;
+    const p = (s?.participants || []).find(x => x.id === pid);
+    if (!p) targetError = '⚠️ No hay comensales sin app en la mesa.';
+    else {
+      const mgr = (s.participants || []).find(x => x.id === p.managedBy);
+      html += `<br><span style="color:var(--text3)">Se agrega a la cuenta de <strong>${p.name}</strong>` +
+        (p.managedBy === CL.session.myId ? ' (a tu cargo)' : ' · lo paga ' + (mgr?.name || 'quien lo tiene a cargo')) + `</span>`;
+    }
   } else {
     html += `<br><span style="color:var(--text3)">Se agrega a tu cuenta personal</span>`;
   }
+  if (targetError) html += `<br><span style="color:var(--red);font-weight:600">${targetError}</span>`;
   // Revisión de inventario en vivo: limita la cantidad y bloquea el botón si se pasa
   const avail = availableQty(mi, _stockCtx?.sessions || [s].filter(Boolean));
   const limit = Math.min(avail, MAX_QTY_PER_ORDER);
   const qtyInput = document.getElementById('cl-ao-qty');
   qtyInput.max = Math.max(1, limit);
-  const over = qty > limit;
-  if (over) {
+  const over = qty > limit || !!targetError;
+  if (qty > limit) {
     const msg = qty > avail ? _noStockMsg(mi, avail)
       : '⚠️ Máximo ' + MAX_QTY_PER_ORDER + ' unidades por pedido. Para cantidades mayores consulta con el restaurante.';
     html += `<br><span style="color:var(--red);font-weight:600">${msg}</span>`;
@@ -1043,19 +1121,33 @@ async function addClientOrder() {
   }
   const myId = CL.session.myId;
   const myName = CL.session.myName;
-  const isShared = type === 'shared_all';
+  const parts = s.participants || [];
+  // A quién va el pedido según el tipo elegido
+  let orderType = 'individual', personId = myId, personName = myName, sharedWith = null, label = '';
+  if (type === 'proxy') {
+    const p = parts.find(x => x.id === document.getElementById('cl-ao-proxy').value && x.isProxy);
+    if (!p) { toast('⚠️ Selecciona el comensal sin app'); return; }
+    personId = p.id; personName = p.name; label = ' para ' + p.name;
+  } else if (type === 'shared_all') {
+    orderType = 'shared'; sharedWith = 'ALL'; label = ' (compartido con todos)';
+  } else if (type === 'shared_some') {
+    const ids = [..._clShareSel].filter(id => parts.some(p => p.id === id));
+    if (!ids.length) { toast('⚠️ Selecciona al menos una persona para compartir'); return; }
+    orderType = 'shared'; sharedWith = ids;
+    personName = ids.map(id => parts.find(p => p.id === id)?.name).filter(Boolean).join(', ');
+    label = ' (compartido ÷' + ids.length + ')';
+  }
   s.orders = s.orders || [];
   s.orders.push({
     id: Date.now(), menuItemId: menuId, qty,
-    type: isShared ? 'shared' : 'individual',
-    personId: myId, personName: myName,
-    sharedWith: isShared ? 'ALL' : null,
-    status: 'review', createdBy: 'client', createdAt: new Date().toISOString(),
+    type: orderType, personId, personName, sharedWith,
+    status: 'review', createdBy: 'client', createdById: myId, createdByName: myName,
+    createdAt: new Date().toISOString(),
   });
   await _persistSession(s);
   closeModal('modal-client-order');
   renderMesa();
-  toast('⏳ ' + mi.emoji + ' ' + mi.name + ' × ' + qty + (isShared ? ' (compartido)' : '') + ' enviado · En revisión por el restaurante', 4000);
+  toast('⏳ ' + mi.emoji + ' ' + mi.name + ' × ' + qty + label + ' enviado · En revisión por el restaurante', 4000);
 }
 
 // Fila de pedido con su estado; canCancel = el cliente puede pedir que se cancele
@@ -1102,7 +1194,7 @@ let _myOrderSnap = null;
 function _notifyOrderChanges(s) {
   const myId = CL.session?.myId;
   const managed = (s.participants || []).filter(p => p.isProxy && p.managedBy === myId).map(p => p.id);
-  const mine = (s.orders || []).filter(o => o.personId === myId || managed.includes(o.personId));
+  const mine = (s.orders || []).filter(o => o.personId === myId || o.createdById === myId || managed.includes(o.personId));
   const menu = _menu();
   const snap = {};
   mine.forEach(o => {
@@ -1213,11 +1305,16 @@ function renderMesa() {
     let sharedLabel = '';
     if (isShared) {
       if (o.sharedWith === 'ALL') sharedLabel = 'Todos los comensales';
-      else if (Array.isArray(o.sharedWith)) { sharedLabel = '×' + o.sharedWith.length + ' personas'; }
+      else if (Array.isArray(o.sharedWith)) {
+        sharedLabel = o.sharedWith.map(id => id === myId ? 'tú' : (s.participants.find(p => p.id === id)?.name || '?')).join(', ') +
+          ' (÷' + o.sharedWith.length + ')';
+      }
       else sharedLabel = o.personName;
     }
-    tableList.innerHTML += _clientOrderRow(o, mi, isShared ? 'Compartido: ' + sharedLabel : o.personName,
-      isShared ? 'badge-amber' : 'badge-gray', isShared ? 'Compartido' : 'Individual', o.personId === myId, '');
+    const byOther = o.createdByName && o.createdById !== o.personId ? ' · pedido por ' + (o.createdById === myId ? 'ti' : o.createdByName) : '';
+    tableList.innerHTML += _clientOrderRow(o, mi, (isShared ? 'Compartido: ' + sharedLabel : o.personName) + byOther,
+      isShared ? 'badge-amber' : 'badge-gray', isShared ? 'Compartido' : 'Individual',
+      o.personId === myId || o.createdById === myId, '');
   });
 
   // Real-time tip sync

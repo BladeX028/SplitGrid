@@ -761,12 +761,26 @@ function renderAttentionOrders(active) {
       <div class="order-emoji">${mi.emoji}</div>
       <div style="flex:1;min-width:140px">
         <div class="order-name">${mi.name} × ${o.qty} — Mesa #${s.tableNumber}</div>
-        <div class="order-person">${o.cancelRequested ? '✋ ' + (o.cancelRequestedBy || o.personName) + ' pide cancelar' : 'Pedido por ' + o.personName}</div>
+        <div class="order-person">${o.cancelRequested ? '✋ ' + (o.cancelRequestedBy || o.personName) + ' pide cancelar' : _orderWhoLabel(s, o)}</div>
       </div>
       <div class="order-price" style="margin-right:4px">${fmtR(mi.price * o.qty)}</div>
       ${_orderActionButtons(s, o)}
     </div>`;
   }).join('');
+}
+
+// "Pedido por X · para Y" / "· compartido: A, B"
+function _orderWhoLabel(s, o) {
+  const by = o.createdByName || o.personName;
+  let who = 'Pedido por ' + by;
+  if (o.type === 'shared') {
+    who += o.sharedWith === 'ALL' ? ' · compartido con todos'
+      : Array.isArray(o.sharedWith) ? ' · compartido: ' + o.sharedWith.map(id => (s.participants || []).find(p => p.id === id)?.name || '?').join(', ')
+      : '';
+  } else if (o.createdById && o.createdById !== o.personId) {
+    who += ' · para ' + o.personName;
+  }
+  return who;
 }
 
 // Botones según el estado del pedido (se usan en el dashboard y en el detalle de la mesa)
@@ -956,7 +970,7 @@ function renderDetailPanel(s) {
       <div class="order-emoji">${mi.emoji}</div>
       <div style="flex:1;min-width:140px">
         <div class="order-name">${mi.name} × ${o.qty}</div>
-        <div class="order-person">${o.type==='shared'?'Compartido: '+sharedLabel:'Solo: '+o.personName}</div>
+        <div class="order-person">${o.type==='shared'?'Compartido: '+sharedLabel:'Solo: '+o.personName}${o.createdByName && o.createdById !== o.personId ? ' · pedido por ' + o.createdByName : ''}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
           <span class="badge ${o.type==='shared'?'badge-amber':'badge-gray'}">${o.type==='shared'?'Compartido':'Individual'}</span>
           ${orderStatusBadge(o)}
@@ -1081,7 +1095,7 @@ async function createSession() {
   const table = DB.tables.find(t => t.id === tableId);
   if (!table) { toast('⚠️ Mesa no válida'); return; }
   const s = {
-    id: DB.nextSessionId++, tableId: table.id, tableNumber: table.number,
+    id: genSessionId(), tableId: table.id, tableNumber: table.number,
     status: 'occupied', splitMode: document.getElementById('nt-split').value,
     tax: DB.restaurant.tax, tip: DB.restaurant.tip,
     joinCode: genCode(), openedAt: new Date().toISOString(),
@@ -1165,7 +1179,7 @@ function closeTableSession() {
   save();
   // Marcar la sesión como cerrada en la nube (si no, seguiría contando como mesa abierta)
   if (DB._loginEmail) {
-    sbUpdateSessionFields(String(s.id), { status: 'closed', closedAt: s.closedAt }).catch(() => {});
+    sbUpdateSessionFields(String(s.id), { status: 'closed', closedAt: s.closedAt }, DB._loginEmail).catch(() => {});
     sbSaveHistoryEntry(DB._loginEmail, s).catch(() => {});
   }
   toast('✅ Mesa #' + s.tableNumber + ' cerrada · Total: ' + fmtR(s.total));

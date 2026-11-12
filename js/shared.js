@@ -42,6 +42,18 @@ function genCode() {
   return Array.from({length: 6}, () => ch[Math.floor(Math.random() * ch.length)]).join('');
 }
 
+// ID de sesión único entre restaurantes (antes era 1, 2, 3… por restaurante y chocaba en Supabase).
+// Numérico (< Number.MAX_SAFE_INTEGER) para seguir funcionando donde el código espera un número.
+let _sidLast = 0, _sidSeq = Math.floor(Math.random() * 1000);
+function genSessionId() {
+  // milisegundos × 1000 + secuencia (arranca aleatoria): nunca se repite en este navegador
+  // y es muy improbable que coincida con otro restaurante; sbSyncDB además evita pisar sesiones ajenas.
+  let id = Date.now() * 1000 + (_sidSeq++ % 1000);
+  if (id <= _sidLast) id = _sidLast + 1;
+  _sidLast = id;
+  return id;
+}
+
 function elapsedMin(ts) {
   return Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
 }
